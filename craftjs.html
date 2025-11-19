@@ -177,8 +177,10 @@
                 }
             }, [enabled, api, dataPath]);
 
-            const childNodes = query.node(id).get()?.data?.nodes;
-            const templateNodeId = childNodes && childNodes.length > 0 ? childNodes[0] : null;
+            // Get the template container node and its children
+            const templateContainerId = `${id}_template`;
+            const templateContainer = query.node(templateContainerId).get();
+            const templateNodeIds = templateContainer?.data?.nodes || [];
 
             return (
                 <div ref={ref => connect(drag(ref))} className="w-full min-h-[100px] p-2 border border-dashed border-transparent hover:border-blue-300 transition-colors">
@@ -194,8 +196,12 @@
                         <div className={layout}>
                             {loading && <div className="p-8 text-center text-gray-500 flex items-center justify-center gap-2"><Loader2 className="animate-spin"/> Loading...</div>}
                             {error && <div className="p-4 text-red-500 bg-red-50 rounded">Error: {error}</div>}
-                            {!loading && !error && templateNodeId && data.map((item, index) => (
-                                <StaticNodeRenderer key={index} nodeId={templateNodeId} data={item} />
+                            {!loading && !error && templateNodeIds.length > 0 && data.map((item, index) => (
+                                <div key={index} className="bg-white p-4 rounded-lg shadow-sm">
+                                    {templateNodeIds.map((nodeId) => (
+                                        <StaticNodeRenderer key={`${index}-${nodeId}`} nodeId={nodeId} data={item} />
+                                    ))}
+                                </div>
                             ))}
                             {!loading && !error && data.length === 0 && <div className="p-4 text-gray-400 italic">No data found.</div>}
                         </div>

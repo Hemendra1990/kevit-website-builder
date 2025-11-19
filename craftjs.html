@@ -1,0 +1,944 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Craft.js Website Builder</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#2563eb',
+                        secondary: '#475569',
+                        canvas: '#f1f5f9'
+                    },
+                    animation: {
+                        'pulse-fast': 'pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Import Map for Clean Module Loading -->
+    <script type="importmap">
+    {
+        "imports": {
+            "react": "https://esm.sh/react@18.2.0",
+            "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+            "@craftjs/core": "https://esm.sh/@craftjs/core@0.2.6?deps=react@18.2.0,react-dom@18.2.0",
+            "lucide-react": "https://esm.sh/lucide-react@0.263.1?deps=react@18.2.0",
+            "zod": "https://esm.sh/zod",
+            "clsx": "https://esm.sh/clsx"
+        }
+    }
+    </script>
+
+    <style>
+        body { font-family: 'Inter', sans-serif; overflow: hidden; }
+        
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        /* Component Hover Effects in Editor */
+        .component-selected {
+            outline: 2px solid #2563eb !important;
+            position: relative;
+        }
+        .component-hovered {
+            outline: 1px dashed #2563eb;
+        }
+        
+        /* Form Styles */
+        input:focus, textarea:focus, select:focus {
+            outline: 2px solid #2563eb;
+            outline-offset: 1px;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 h-screen flex flex-col text-slate-800">
+
+    <div id="root" class="h-full flex flex-col"></div>
+
+    <script type="text/babel" data-type="module">
+        import React, { useState, useEffect, useCallback, createContext, useContext } from 'react';
+        import { createRoot } from 'react-dom/client';
+        import { Editor, Frame, Element, useNode, useEditor } from '@craftjs/core';
+        import { z } from 'zod';
+        import { 
+            Type, Square, LayoutTemplate, Image as ImageIcon, Settings, Trash2, Move, MousePointer2,
+            Eye, Code, Undo, Redo, FormInput as FormInputIcon, CheckSquare, Send,
+            Heading1, Video as VideoIcon, Minus, Link as LinkIcon, Columns, List as ListIcon, AlertCircle, Tag, Percent,
+            Menu, ChevronDown, User, Star, Clock, Layout, MoreHorizontal, CreditCard, FolderOpen, Loader2, GripHorizontal,
+            Database, RefreshCw
+        } from 'lucide-react';
+        import clsx from 'clsx';
+
+        // Helper to resolve dot notation paths (e.g. "user.name")
+        const get = (obj, path, defaultValue) => {
+            if (!path) return defaultValue;
+            const result = path.split('.').reduce((r, k) => (r || {})[k], obj);
+            return result === undefined ? defaultValue : result;
+        };
+
+        // Context for Dynamic Data
+        const DataContext = createContext(null);
+
+        // ==========================================
+        // 1. STATIC RENDERER & LIST VIEW
+        // ==========================================
+
+        const StaticNodeRenderer = ({ nodeId, data }) => {
+            const { query } = useEditor();
+            const node = query.node(nodeId).get();
+            
+            if (!node) return null;
+
+            const Component = node.data.type;
+            const props = { ...node.data.props };
+            
+            if (props.dynamicKey && data) {
+                const dynamicValue = get(data, props.dynamicKey);
+                if (node.data.displayName === 'Text' || node.data.displayName === 'Heading') {
+                    if(dynamicValue) props.text = String(dynamicValue);
+                } else if (node.data.displayName === 'Image' || node.data.displayName === 'Avatar') {
+                    if(dynamicValue) props.src = String(dynamicValue);
+                } else if (node.data.displayName === 'Badge') {
+                    if(dynamicValue) props.text = String(dynamicValue);
+                } else if (node.data.displayName === 'Link') {
+                    if(dynamicValue) props.href = String(dynamicValue);
+                }
+            }
+
+            const children = (node.data.nodes || []).map((childId) => (
+                <StaticNodeRenderer key={childId} nodeId={childId} data={data} />
+            ));
+
+            return React.createElement(Component, { ...props, key: nodeId }, children.length > 0 ? children : undefined);
+        };
+
+        const ListViewSettings = () => {
+            const { actions: { setProp }, props } = useNode((node) => ({ props: node.data.props }));
+            return (
+                <div className="space-y-3 p-1">
+                    <div>
+                        <label className="text-xs text-gray-500 block mb-1">API Endpoint</label>
+                        <input type="text" value={props.api} onChange={(e) => setProp(props => props.api = e.target.value)} className="w-full px-2 py-1 border rounded text-sm" placeholder="https://api.example.com/users"/>
+                    </div>
+                    <div>
+                        <label className="text-xs text-gray-500 block mb-1">Data Path (Supports dot notation)</label>
+                        <input type="text" value={props.dataPath} onChange={(e) => setProp(props => props.dataPath = e.target.value)} className="w-full px-2 py-1 border rounded text-sm" placeholder="e.g. data.results"/>
+                        <div className="text-[10px] text-gray-400">Path to the array in the JSON response.</div>
+                    </div>
+                     <div>
+                        <label className="text-xs text-gray-500 block mb-1">Layout</label>
+                        <select value={props.layout} onChange={(e) => setProp(props => props.layout = e.target.value)} className="w-full px-2 py-1 border rounded text-sm">
+                            <option value="flex-col">Vertical List</option>
+                            <option value="grid grid-cols-2 gap-4">Grid (2 Cols)</option>
+                            <option value="grid grid-cols-3 gap-4">Grid (3 Cols)</option>
+                        </select>
+                    </div>
+                </div>
+            );
+        };
+
+        const ListView = ({ api, dataPath, layout, children }) => {
+            const { connectors: { connect, drag }, id } = useNode();
+            const { enabled, query } = useEditor((state) => ({ enabled: state.options.enabled }));
+            const [data, setData] = useState([]);
+            const [loading, setLoading] = useState(false);
+            const [error, setError] = useState(null);
+
+            useEffect(() => {
+                if (!enabled && api) {
+                    setLoading(true);
+                    fetch(api)
+                        .then(res => res.json())
+                        .then(json => {
+                            const list = dataPath ? get(json, dataPath, []) : json;
+                            if (Array.isArray(list)) {
+                                setData(list);
+                            } else {
+                                setError("API response at path is not an array");
+                            }
+                        })
+                        .catch(err => setError(err.message))
+                        .finally(() => setLoading(false));
+                }
+            }, [enabled, api, dataPath]);
+
+            const childNodes = query.node(id).get()?.data?.nodes;
+            const templateNodeId = childNodes && childNodes.length > 0 ? childNodes[0] : null;
+
+            return (
+                <div ref={ref => connect(drag(ref))} className="w-full min-h-[100px] p-2 border border-dashed border-transparent hover:border-blue-300 transition-colors">
+                    {enabled ? (
+                        <div className="border-2 border-dashed border-slate-300 rounded-lg p-4 bg-slate-50 relative">
+                            <div className="absolute top-2 right-2 text-xs font-bold text-slate-400 uppercase tracking-wider pointer-events-none">Template</div>
+                            <Element is={Container} id={`${id}_template`} canvas padding="p-4" background="bg-white" shadow={true}>
+                                <Heading text="Item Title" tag="h3" />
+                                <Text text="Description goes here" />
+                            </Element>
+                        </div>
+                    ) : (
+                        <div className={layout}>
+                            {loading && <div className="p-8 text-center text-gray-500 flex items-center justify-center gap-2"><Loader2 className="animate-spin"/> Loading...</div>}
+                            {error && <div className="p-4 text-red-500 bg-red-50 rounded">Error: {error}</div>}
+                            {!loading && !error && templateNodeId && data.map((item, index) => (
+                                <StaticNodeRenderer key={index} nodeId={templateNodeId} data={item} />
+                            ))}
+                            {!loading && !error && data.length === 0 && <div className="p-4 text-gray-400 italic">No data found.</div>}
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        ListView.craft = {
+            displayName: 'List View',
+            props: { api: 'https://jsonplaceholder.typicode.com/users', dataPath: '', layout: 'grid grid-cols-2 gap-4' },
+            related: { settings: ListViewSettings }
+        };
+
+        // ==========================================
+        // 2. CORE COMPONENTS
+        // ==========================================
+
+        const TextSettings = () => {
+            const { actions: { setProp }, props } = useNode((node) => ({ props: node.data.props }));
+            return (
+                <div className="space-y-3 p-1">
+                    <div><label className="text-xs text-gray-500 block mb-1">Content</label><textarea value={props.text} onChange={(e) => setProp(props => props.text = e.target.value)} className="w-full px-2 py-1 border rounded text-sm h-20"/></div>
+                    <div><label className="text-xs text-gray-500 block mb-1">Size</label><input type="range" min="12" max="64" value={parseInt(props.fontSize)} onChange={(e) => setProp(props => props.fontSize = e.target.value + 'px')} className="w-full"/></div>
+                    <div className="pt-2 border-t">
+                        <label className="text-xs font-bold text-blue-600 block mb-1 flex items-center gap-1"><Database size={10}/> Dynamic Key</label>
+                        <input type="text" value={props.dynamicKey || ''} onChange={(e) => setProp(props => props.dynamicKey = e.target.value)} className="w-full px-2 py-1 border border-blue-200 rounded text-sm font-mono bg-blue-50" placeholder="e.g. user.address.city"/>
+                        <div className="text-[10px] text-gray-400 mt-1">Use dot notation for nested objects</div>
+                    </div>
+                </div>
+            );
+        };
+        const Text = ({ text, fontSize, textAlign, ...props }) => {
+            const { connectors: { connect, drag }, isActive } = useNode((node) => ({ isActive: node.events.selected }));
+            return <div ref={ref => connect(drag(ref))} style={{ fontSize, textAlign }} className={clsx("p-2", isActive && "min-w-[50px]")}>{text}</div>;
+        };
+        Text.craft = { displayName: 'Text', props: { text: 'Edit this text', fontSize: '16px', textAlign: 'left' }, related: { settings: TextSettings } };
+
+        const ImageSettings = () => {
+            const { actions: { setProp }, props } = useNode((node) => ({ props: node.data.props }));
+            return (
+                <div className="space-y-3 p-1">
+                    <div><label className="text-xs text-gray-500 block mb-1">URL</label><input type="text" value={props.src} onChange={(e) => setProp(props => props.src = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"/></div>
+                    <div><label className="text-xs text-gray-500 block mb-1">Radius</label><input type="range" min="0" max="50" value={props.borderRadius} onChange={(e) => setProp(props => props.borderRadius = parseInt(e.target.value))} className="w-full"/></div>
+                    <div className="pt-2 border-t">
+                        <label className="text-xs font-bold text-blue-600 block mb-1 flex items-center gap-1"><Database size={10}/> Dynamic Key</label>
+                        <input type="text" value={props.dynamicKey || ''} onChange={(e) => setProp(props => props.dynamicKey = e.target.value)} className="w-full px-2 py-1 border border-blue-200 rounded text-sm font-mono bg-blue-50" placeholder="e.g. item.images.thumbnail"/>
+                    </div>
+                </div>
+            );
+        };
+        const Image = ({ src, alt, borderRadius, ...props }) => {
+            const { connectors: { connect, drag } } = useNode();
+            return <img ref={ref => connect(drag(ref))} src={src || 'https://via.placeholder.com/300'} alt={alt} className="w-full object-cover" style={{ borderRadius: `${borderRadius}px` }} {...props} />;
+        };
+        Image.craft = { displayName: 'Image', props: { src: 'https://images.unsplash.com/photo-1498050108023-c5249f4df085?auto=format&fit=crop&w=600&q=80', alt: 'Image', borderRadius: 4 }, related: { settings: ImageSettings } };
+
+        const HeadingSettings = () => {
+            const { actions: { setProp }, props } = useNode((node) => ({ props: node.data.props }));
+            return (
+                <div className="space-y-3 p-1">
+                    <div><label className="text-xs text-gray-500 block mb-1">Text</label><input type="text" value={props.text} onChange={(e) => setProp(props => props.text = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"/></div>
+                    <div><label className="text-xs text-gray-500 block mb-1">Tag</label><select value={props.tag} onChange={(e) => setProp(props => props.tag = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"><option value="h1">H1</option><option value="h2">H2</option><option value="h3">H3</option><option value="h4">H4</option></select></div>
+                    <div className="pt-2 border-t">
+                        <label className="text-xs font-bold text-blue-600 block mb-1 flex items-center gap-1"><Database size={10}/> Dynamic Key</label>
+                        <input type="text" value={props.dynamicKey || ''} onChange={(e) => setProp(props => props.dynamicKey = e.target.value)} className="w-full px-2 py-1 border border-blue-200 rounded text-sm font-mono bg-blue-50" placeholder="e.g. post.title"/>
+                    </div>
+                </div>
+            );
+        };
+        const Heading = ({ text, tag, textAlign, ...props }) => {
+            const { connectors: { connect, drag } } = useNode();
+            const Tag = tag;
+            const sizes = { h1: "text-4xl font-bold mb-4", h2: "text-3xl font-bold mb-3", h3: "text-2xl font-semibold mb-2", h4: "text-xl font-semibold mb-2" };
+            return <Tag ref={ref => connect(drag(ref))} className={clsx(sizes[tag], "text-slate-800")} style={{ textAlign }} {...props}>{text}</Tag>;
+        };
+        Heading.craft = { displayName: 'Heading', props: { text: 'Heading', tag: 'h2', textAlign: 'left' }, related: { settings: HeadingSettings } };
+
+        // ==========================================
+        // 3. FORM COMPONENTS
+        // ==========================================
+
+        const FormInputSettings = () => {
+            const { actions: { setProp }, props } = useNode((node) => ({ props: node.data.props }));
+            return (
+                <div className="space-y-3 p-1">
+                    <div><label className="text-xs text-gray-500 block mb-1">Label</label><input type="text" value={props.label} onChange={(e) => setProp(props => props.label = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"/></div>
+                    <div><label className="text-xs text-gray-500 block mb-1">Name</label><input type="text" value={props.name} onChange={(e) => setProp(props => props.name = e.target.value)} className="w-full px-2 py-1 border rounded text-sm font-mono"/></div>
+                    <div><label className="text-xs text-gray-500 block mb-1">Type</label><select value={props.inputType} onChange={(e) => setProp(props => props.inputType = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"><option value="text">Text</option><option value="email">Email</option><option value="number">Number</option></select></div>
+                    <div><label className="flex items-center gap-2 text-xs text-gray-500"><input type="checkbox" checked={props.required} onChange={(e) => setProp(props => props.required = e.target.checked)}/> Required</label></div>
+                </div>
+            );
+        };
+        const FormInput = ({ label, name, inputType, required }) => {
+            const { connectors: { connect, drag } } = useNode();
+            return (
+                <div ref={ref => connect(drag(ref))} className="w-full mb-4">
+                    <label className="block text-sm font-medium text-slate-700 mb-1">{label} {required && <span className="text-red-500">*</span>}</label>
+                    <input type={inputType} name={name} required={required} placeholder={`Enter ${label.toLowerCase()}`} className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm"/>
+                </div>
+            );
+        };
+        FormInput.craft = { displayName: 'Form Input', props: { label: 'Email Address', name: 'email', inputType: 'email', required: true }, related: { settings: FormInputSettings } };
+
+        const FormSubmitSettings = () => {
+            const { actions: { setProp }, props } = useNode((node) => ({ props: node.data.props }));
+            return (
+                <div className="space-y-3 p-1">
+                     <div><label className="text-xs text-gray-500 block mb-1">Text</label><input type="text" value={props.text} onChange={(e) => setProp(props => props.text = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"/></div>
+                     <div><label className="text-xs text-gray-500 block mb-1">Width</label><select value={props.fullWidth ? 'full' : 'auto'} onChange={(e) => setProp(props => props.fullWidth = e.target.value === 'full')} className="w-full px-2 py-1 border rounded text-sm"><option value="auto">Auto</option><option value="full">Full Width</option></select></div>
+                </div>
+            );
+        };
+        const FormSubmit = ({ text, fullWidth }) => {
+            const { connectors: { connect, drag } } = useNode();
+            return <button ref={ref => connect(drag(ref))} type="submit" className={clsx("bg-blue-600 text-white px-4 py-2 rounded-md font-medium hover:bg-blue-700 transition-colors shadow-sm", fullWidth ? "w-full" : "")}>{text}</button>;
+        };
+        FormSubmit.craft = { displayName: 'Submit Button', props: { text: 'Submit Form', fullWidth: true }, related: { settings: FormSubmitSettings } };
+
+        const FormContainerSettings = () => {
+            const { actions: { setProp }, props } = useNode((node) => ({ props: node.data.props }));
+            return (
+                <div className="space-y-3 p-1">
+                    <div><label className="text-xs text-gray-500 block mb-1">Action</label><input type="text" value={props.action} onChange={(e) => setProp(props => props.action = e.target.value)} className="w-full px-2 py-1 border rounded text-sm font-mono"/></div>
+                    <div><label className="text-xs text-gray-500 block mb-1">Method</label><select value={props.method} onChange={(e) => setProp(props => props.method = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"><option value="POST">POST</option><option value="GET">GET</option></select></div>
+                </div>
+            );
+        };
+        const FormContainer = ({ action, method, children }) => {
+            const { connectors: { connect, drag } } = useNode();
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                const form = e.target;
+                const formData = new FormData(form);
+                const data = Object.fromEntries(formData);
+                const schemaShape = {};
+                Array.from(form.elements).forEach(field => {
+                    if (!field.name) return;
+                    let fieldSchema = field.type === 'number' ? z.coerce.number() : field.type === 'email' ? z.string().email() : z.string();
+                    if (field.required && field.type !== 'number') fieldSchema = fieldSchema.min(1);
+                    if (!field.required) fieldSchema = fieldSchema.optional();
+                    schemaShape[field.name] = fieldSchema;
+                });
+                try {
+                    const validatedData = z.object(schemaShape).parse(data);
+                    alert(`✅ Validated:\n${JSON.stringify(validatedData, null, 2)}`);
+                } catch (err) {
+                    if (err instanceof z.ZodError) alert(`❌ Error:\n${err.errors.map(e => `• ${e.path[0]}: ${e.message}`).join('\n')}`);
+                }
+            };
+            return <form ref={ref => connect(drag(ref))} className="p-6 bg-white border border-gray-200 rounded-lg shadow-sm min-h-[150px]" action={action} method={method} onSubmit={handleSubmit}>{children}</form>;
+        };
+        FormContainer.craft = { displayName: 'Form Container', props: { action: '/api/submit', method: 'POST' }, related: { settings: FormContainerSettings } };
+
+        // ==========================================
+        // 4. OTHER COMPONENTS
+        // ==========================================
+
+        const ContainerSettings = () => {
+             const { actions: { setProp }, props } = useNode((node) => ({ props: node.data.props }));
+            return (
+                <div className="space-y-3 p-1">
+                    <div><label className="text-xs text-gray-500 block mb-1">Background</label><div className="grid grid-cols-4 gap-2">{['white', 'slate-50', 'slate-100', 'blue-50', 'transparent'].map(c => (<button key={c} className={clsx("h-6 rounded border", c === 'transparent' ? "bg-white" : `bg-${c.replace('bg-', '')}`)} style={c === 'transparent' ? {backgroundImage: 'linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%)', backgroundSize: '10px 10px'} : {}} onClick={() => setProp(props => props.background = c === 'white' ? 'bg-white' : c === 'transparent' ? '' : `bg-${c}`)}/>))}</div></div>
+                    <div><label className="text-xs text-gray-500 block mb-1">Padding</label><select value={props.padding} onChange={(e) => setProp(props => props.padding = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"><option value="p-2">Small</option><option value="p-6">Medium</option><option value="p-10">Large</option></select></div>
+                    <div><label className="flex items-center gap-2 text-xs text-gray-500"><input type="checkbox" checked={props.shadow} onChange={(e) => setProp(props => props.shadow = e.target.checked)}/> Shadow</label></div>
+                </div>
+            )
+        }
+        const Container = ({ background, padding, shadow, children, ...props }) => {
+            const { connectors: { connect, drag } } = useNode();
+            return <div ref={ref => connect(drag(ref))} className={clsx("w-full min-h-[50px] border border-transparent transition-all", background, padding, shadow ? 'shadow-lg' : '')} {...props}>{children}</div>;
+        };
+        Container.craft = { displayName: 'Container', props: { background: 'bg-white', padding: 'p-6', shadow: false }, related: { settings: ContainerSettings } };
+
+        const Card = ({ background, padding, children }) => {
+             const { connectors: { connect, drag }, id } = useNode();
+             return (
+                 <div ref={ref => connect(drag(ref))} className="bg-white rounded-lg shadow-md overflow-hidden max-w-sm m-2 border border-gray-100">
+                    <div className="h-32 bg-slate-200 w-full flex items-center justify-center text-slate-400"><ImageIcon size={40} /></div>
+                    <div className="p-4"><Element is={Container} padding="p-0" canvas id={`${id}_content`}><Text text="Card Title" fontSize="20px" textAlign="left" /><Text text="Card description." fontSize="14px" textAlign="left" /><Button text="Action" variant="outlined" color="blue" /></Element></div>
+                 </div>
+             )
+        }
+        Card.craft = { displayName: 'Card', related: { settings: ContainerSettings } }
+
+        const TwoColumns = ({ children }) => {
+            const { connectors: { connect, drag }, id } = useNode();
+            return (
+                <div ref={ref => connect(drag(ref))} className="grid grid-cols-1 md:grid-cols-2 gap-4 my-2">
+                    <Element is={Container} canvas id={`${id}_col1`} background="bg-white" padding="p-4" shadow={false}><Text text="Column 1" /></Element>
+                    <Element is={Container} canvas id={`${id}_col2`} background="bg-white" padding="p-4" shadow={false}><Text text="Column 2" /></Element>
+                </div>
+            );
+        };
+        TwoColumns.craft = { displayName: 'Two Columns' };
+
+        const ButtonSettings = () => {
+            const { actions: { setProp }, props } = useNode((node) => ({ props: node.data.props }));
+            return (
+                <div className="space-y-3 p-1">
+                    <div><label className="text-xs text-gray-500 block mb-1">Text</label><input type="text" value={props.text} onChange={(e) => setProp(props => props.text = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"/></div>
+                    <div><label className="text-xs text-gray-500 block mb-1">Variant</label><select value={props.variant} onChange={(e) => setProp(props => props.variant = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"><option value="contained">Filled</option><option value="outlined">Outlined</option><option value="text">Text</option></select></div>
+                    <div><label className="text-xs text-gray-500 block mb-1">Color</label><div className="flex gap-2">{['blue', 'green', 'red', 'slate'].map(c => (<button key={c} className={`w-6 h-6 rounded-full bg-${c}-500 ${props.color === c ? 'ring-2 ring-offset-1 ring-gray-400' : ''}`} onClick={() => setProp(props => props.color = c)}/>))}</div></div>
+                </div>
+            );
+        };
+        const Button = ({ text, variant, color, ...props }) => {
+            const { connectors: { connect, drag } } = useNode();
+            const baseStyles = "px-4 py-2 rounded-md font-medium transition-all duration-200";
+            const variants = { contained: `bg-${color}-600 text-white hover:bg-${color}-700 shadow-sm`, outlined: `border-2 border-${color}-600 text-${color}-600 hover:bg-${color}-50`, text: `text-${color}-600 hover:bg-${color}-50` };
+            return <button ref={ref => connect(drag(ref))} className={clsx(baseStyles, variants[variant])} {...props}>{text}</button>;
+        };
+        Button.craft = { displayName: 'Button', props: { text: 'Click Me', variant: 'contained', color: 'blue' }, related: { settings: ButtonSettings } };
+
+        const Divider = () => {
+            const { connectors: { connect, drag } } = useNode();
+            return <hr ref={ref => connect(drag(ref))} className="my-4 border-t border-gray-300 w-full" />;
+        };
+        Divider.craft = { displayName: 'Divider' };
+
+        const ListSettings = () => {
+            const { actions: { setProp }, props } = useNode((node) => ({ props: node.data.props }));
+            return (
+                <div className="space-y-3 p-1">
+                    <div><label className="text-xs text-gray-500 block mb-1">Items (newline separated)</label><textarea value={props.items} onChange={(e) => setProp(props => props.items = e.target.value)} className="w-full px-2 py-1 border rounded text-sm h-24"/></div>
+                    <div><label className="text-xs text-gray-500 block mb-1">Ordered</label><input type="checkbox" checked={props.ordered} onChange={(e) => setProp(props => props.ordered = e.target.checked)}/></div>
+                </div>
+            );
+        };
+        const List = ({ items, ordered }) => {
+            const { connectors: { connect, drag } } = useNode();
+            const listItems = items.split('\n').filter(i => i);
+            const Tag = ordered ? 'ol' : 'ul';
+            return (
+                <Tag ref={ref => connect(drag(ref))} className={clsx("pl-5 my-2", ordered ? "list-decimal" : "list-disc")}>
+                    {listItems.map((item, i) => <li key={i} className="mb-1 text-slate-700">{item}</li>)}
+                </Tag>
+            );
+        };
+        List.craft = { displayName: 'List', props: { items: 'Item One\nItem Two\nItem Three', ordered: false }, related: { settings: ListSettings } };
+
+        // Link Component (Updated with Dynamic Key hint)
+        const LinkSettings = () => {
+            const { actions: { setProp }, props } = useNode((node) => ({ props: node.data.props }));
+            return (
+                <div className="space-y-3 p-1">
+                     <div><label className="text-xs text-gray-500 block mb-1">Text</label><input type="text" value={props.text} onChange={(e) => setProp(props => props.text = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"/></div>
+                     <div><label className="text-xs text-gray-500 block mb-1">URL</label><input type="text" value={props.href} onChange={(e) => setProp(props => props.href = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"/></div>
+                     <div className="pt-2 border-t">
+                        <label className="text-xs font-bold text-blue-600 block mb-1 flex items-center gap-1"><Database size={10}/> Dynamic URL Key</label>
+                        <input type="text" value={props.dynamicKey || ''} onChange={(e) => setProp(props => props.dynamicKey = e.target.value)} className="w-full px-2 py-1 border border-blue-200 rounded text-sm font-mono bg-blue-50" placeholder="e.g. company.website.url"/>
+                     </div>
+                </div>
+            );
+        };
+        const Link = ({ text, href }) => {
+            const { connectors: { connect, drag } } = useNode();
+            return <a ref={ref => connect(drag(ref))} href={href} target="_blank" className="text-blue-600 hover:underline inline-block p-1">{text}</a>;
+        };
+        Link.craft = { displayName: 'Link', props: { text: 'Click Here', href: '#' }, related: { settings: LinkSettings } };
+
+        const AlertSettings = () => {
+            const { actions: { setProp }, props } = useNode((node) => ({ props: node.data.props }));
+            return (
+                <div className="space-y-3 p-1">
+                    <div><label className="text-xs text-gray-500 block mb-1">Message</label><textarea value={props.text} onChange={(e) => setProp(props => props.text = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"/></div>
+                    <div><label className="text-xs text-gray-500 block mb-1">Variant</label><select value={props.variant} onChange={(e) => setProp(props => props.variant = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"><option value="info">Info</option><option value="success">Success</option><option value="warning">Warning</option><option value="danger">Danger</option></select></div>
+                </div>
+            );
+        };
+        const Alert = ({ text, variant }) => {
+            const { connectors: { connect, drag } } = useNode();
+            const styles = {
+                info: "bg-blue-50 border-blue-200 text-blue-700",
+                success: "bg-green-50 border-green-200 text-green-700",
+                warning: "bg-yellow-50 border-yellow-200 text-yellow-700",
+                danger: "bg-red-50 border-red-200 text-red-700"
+            };
+            return (
+                <div ref={ref => connect(drag(ref))} className="p-4 rounded-md border my-2 text-sm">
+                   <div className={styles[variant]}> 
+                        <strong>{variant.charAt(0).toUpperCase() + variant.slice(1)}: </strong> {text}
+                   </div>
+                </div>
+            );
+        };
+        Alert.craft = { displayName: 'Alert', props: { text: 'This is an alert message.', variant: 'info' }, related: { settings: AlertSettings } };
+
+        const BadgeSettings = () => {
+             const { actions: { setProp }, props } = useNode((node) => ({ props: node.data.props }));
+             return (
+                 <div className="space-y-3 p-1">
+                     <div><label className="text-xs text-gray-500 block mb-1">Text</label><input type="text" value={props.text} onChange={(e) => setProp(props => props.text = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"/></div>
+                     <div><label className="text-xs text-gray-500 block mb-1">Color</label><div className="flex gap-2">{['blue', 'green', 'red', 'slate', 'purple'].map(c => (<button key={c} className={`w-6 h-6 rounded-full bg-${c}-500 ${props.color === c ? 'ring-2 ring-offset-1 ring-gray-400' : ''}`} onClick={() => setProp(props => props.color = c)} />))}</div></div>
+                 </div>
+             );
+        };
+        const Badge = ({ text, color }) => {
+            const { connectors: { connect, drag } } = useNode();
+            return <span ref={ref => connect(drag(ref))} className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-${color}-100 text-${color}-800 mx-1`}>{text}</span>;
+        };
+        Badge.craft = { displayName: 'Badge', props: { text: 'New', color: 'blue' }, related: { settings: BadgeSettings } };
+
+        const ProgressBarSettings = () => {
+            const { actions: { setProp }, props } = useNode((node) => ({ props: node.data.props }));
+            return (
+                <div className="space-y-3 p-1">
+                    <div><label className="text-xs text-gray-500 block mb-1">Progress (%)</label><input type="range" min="0" max="100" value={props.value} onChange={(e) => setProp(props => props.value = parseInt(e.target.value))} className="w-full"/></div>
+                    <div><label className="text-xs text-gray-500 block mb-1">Color</label><select value={props.color} onChange={(e) => setProp(props => props.color = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"><option value="blue">Blue</option><option value="green">Green</option><option value="red">Red</option></select></div>
+                </div>
+            );
+        };
+        const ProgressBar = ({ value, color }) => {
+            const { connectors: { connect, drag } } = useNode();
+            return (
+                <div ref={ref => connect(drag(ref))} className="w-full bg-gray-200 rounded-full h-2.5 my-2">
+                    <div className={`bg-${color}-600 h-2.5 rounded-full transition-all duration-500`} style={{ width: `${value}%` }}></div>
+                </div>
+            );
+        };
+        ProgressBar.craft = { displayName: 'Progress Bar', props: { value: 50, color: 'blue' }, related: { settings: ProgressBarSettings } };
+
+        const HeaderSettings = () => {
+             const { actions: { setProp }, props } = useNode((node) => ({ props: node.data.props }));
+             return (
+                <div className="space-y-3 p-1">
+                    <div><label className="text-xs text-gray-500 block mb-1">App Name</label><input type="text" value={props.appName} onChange={(e) => setProp(props => props.appName = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"/></div>
+                    <div><label className="text-xs text-gray-500 block mb-1">Fixed</label><input type="checkbox" checked={props.fixed} onChange={(e) => setProp(props => props.fixed = e.target.checked)}/></div>
+                </div>
+             )
+        }
+        const Header = ({ appName, fixed, children }) => {
+            const { connectors: { connect, drag }, id } = useNode();
+            return (
+                <nav ref={ref => connect(drag(ref))} className={clsx("w-full bg-white border-b px-6 py-3 flex items-center justify-between z-40", fixed ? "sticky top-0 shadow-md" : "relative")}>
+                    <div className="flex items-center gap-2 font-bold text-xl text-blue-600"><Layout size={24}/> <span>{appName}</span></div>
+                    <div className="flex-1 px-8"><Element is={Container} id={`${id}_nav`} padding="p-0" background="bg-transparent" canvas><Menubar /></Element></div>
+                    <div><Element is={Container} id={`${id}_cta`} padding="p-0" background="bg-transparent" canvas><Button text="Login" variant="outlined" color="slate" /></Element></div>
+                </nav>
+            )
+        }
+        Header.craft = { displayName: 'Header', props: { appName: 'MyBrand', fixed: false }, related: { settings: HeaderSettings } }
+
+        const MenubarSettings = () => {
+             const { actions: { setProp }, props } = useNode((node) => ({ props: node.data.props }));
+             return (
+                <div className="space-y-3 p-1">
+                    <div><label className="text-xs text-gray-500 block mb-1">Links (comma separated)</label><textarea value={props.items} onChange={(e) => setProp(props => props.items = e.target.value)} className="w-full px-2 py-1 border rounded text-sm h-20"/></div>
+                </div>
+             )
+        }
+        const Menubar = ({ items }) => {
+            const { connectors: { connect, drag } } = useNode();
+            const links = items.split(',').map(i => i.trim());
+            return (
+                <div ref={ref => connect(drag(ref))} className="flex items-center gap-6">
+                    {links.map((link, i) => <a key={i} href="#" className="text-sm font-medium text-slate-600 hover:text-blue-600 transition-colors">{link}</a>)}
+                </div>
+            )
+        }
+        Menubar.craft = { displayName: 'Menubar', props: { items: 'Home, Features, Pricing, About' }, related: { settings: MenubarSettings } }
+
+        const HeroSettings = () => {
+             const { actions: { setProp }, props } = useNode((node) => ({ props: node.data.props }));
+             return (
+                <div className="space-y-3 p-1">
+                    <div><label className="text-xs text-gray-500 block mb-1">Height</label><select value={props.height} onChange={(e) => setProp(props => props.height = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"><option value="h-auto">Auto</option><option value="h-[400px]">Medium</option><option value="h-[600px]">Large</option><option value="h-screen">Full Screen</option></select></div>
+                    <div><label className="text-xs text-gray-500 block mb-1">Alignment</label><select value={props.align} onChange={(e) => setProp(props => props.align = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"><option value="items-start text-left">Left</option><option value="items-center text-center">Center</option><option value="items-end text-right">Right</option></select></div>
+                </div>
+             )
+        }
+        const Hero = ({ height, align, children }) => {
+            const { connectors: { connect, drag }, id } = useNode();
+            return (
+                <div ref={ref => connect(drag(ref))} className={clsx("w-full bg-slate-900 text-white flex flex-col justify-center p-12", height, align)}>
+                    <Element is={Container} id={`${id}_content`} background="bg-transparent" padding="p-0" canvas>
+                        <Heading text="Build Something Amazing" tag="h1" textAlign={align.includes('center') ? 'center' : 'left'} className="text-white" />
+                        <Text text="Launch your next project with our powerful builder platform." fontSize="18px" textAlign={align.includes('center') ? 'center' : 'left'} className="text-slate-300 max-w-2xl mb-6" />
+                        <div className="flex gap-4 mt-4"><Button text="Get Started" variant="contained" color="blue" /><Button text="Learn More" variant="outlined" color="slate" className="text-white border-white hover:bg-white/10" /></div>
+                    </Element>
+                </div>
+            )
+        }
+        Hero.craft = { displayName: 'Hero Section', props: { height: 'h-[400px]', align: 'items-center text-center' }, related: { settings: HeroSettings } }
+
+        const TabsSettings = () => {
+            const { actions: { setProp }, props } = useNode((node) => ({ props: node.data.props }));
+            return (
+                <div className="space-y-3 p-1">
+                    <div><label className="text-xs text-gray-500 block mb-1">Tab 1 Name</label><input type="text" value={props.tab1} onChange={(e) => setProp(props => props.tab1 = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"/></div>
+                    <div><label className="text-xs text-gray-500 block mb-1">Tab 2 Name</label><input type="text" value={props.tab2} onChange={(e) => setProp(props => props.tab2 = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"/></div>
+                    <div><label className="text-xs text-gray-500 block mb-1">Tab 3 Name</label><input type="text" value={props.tab3} onChange={(e) => setProp(props => props.tab3 = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"/></div>
+                </div>
+            )
+        }
+        const Tabs = ({ tab1, tab2, tab3, children }) => {
+            const { connectors: { connect, drag }, id } = useNode();
+            const [active, setActive] = useState(0);
+            return (
+                <div ref={ref => connect(drag(ref))} className="w-full border rounded-lg bg-white overflow-hidden my-4">
+                    <div className="flex border-b bg-slate-50">
+                        {[tab1, tab2, tab3].map((t, i) => (
+                            <button key={i} onClick={() => setActive(i)} className={clsx("flex-1 py-3 text-sm font-medium transition-all", active === i ? "bg-white border-b-2 border-blue-600 text-blue-600" : "text-slate-500 hover:text-slate-700")}>{t}</button>
+                        ))}
+                    </div>
+                    <div className="p-4">
+                        <div hidden={active !== 0}><Element is={Container} id={`${id}_tab_1`} canvas padding="p-4"><Text text="Content for Tab 1" /></Element></div>
+                        <div hidden={active !== 1}><Element is={Container} id={`${id}_tab_2`} canvas padding="p-4"><Text text="Content for Tab 2" /></Element></div>
+                        <div hidden={active !== 2}><Element is={Container} id={`${id}_tab_3`} canvas padding="p-4"><Text text="Content for Tab 3" /></Element></div>
+                    </div>
+                </div>
+            )
+        }
+        Tabs.craft = { displayName: 'Tabs', props: { tab1: 'Overview', tab2: 'Details', tab3: 'Reviews' }, related: { settings: TabsSettings } }
+
+        const Accordion = () => {
+            const { connectors: { connect, drag }, id } = useNode();
+            const [open, setOpen] = useState(0);
+            return (
+                <div ref={ref => connect(drag(ref))} className="w-full border rounded-lg bg-white my-2 divide-y">
+                    {[0, 1, 2].map((i) => (
+                         <div key={i}>
+                            <button onClick={() => setOpen(open === i ? -1 : i)} className="w-full flex items-center justify-between p-4 bg-slate-50 hover:bg-slate-100 transition-colors">
+                                <span className="font-medium text-slate-700">Accordion Item {i + 1}</span>
+                                <ChevronDown size={16} className={clsx("transition-transform", open === i ? "rotate-180" : "")} />
+                            </button>
+                            <div className={clsx("overflow-hidden transition-all", open === i ? "max-h-[500px] opacity-100" : "max-h-0 opacity-0")}>
+                                <Element is={Container} id={`${id}_acc_content_${i}`} canvas padding="p-4"><Text text="Details regarding this section go here." /></Element>
+                            </div>
+                         </div>
+                    ))}
+                </div>
+            )
+        }
+        Accordion.craft = { displayName: 'Accordion' }
+
+        const SkeletonSettings = () => {
+             const { actions: { setProp }, props } = useNode((node) => ({ props: node.data.props }));
+             return (
+                 <div className="space-y-3 p-1">
+                     <div><label className="text-xs text-gray-500 block mb-1">Type</label><select value={props.type} onChange={(e) => setProp(props => props.type = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"><option value="text">Text</option><option value="circular">Circular</option><option value="rectangular">Rectangular</option></select></div>
+                     <div><label className="text-xs text-gray-500 block mb-1">Width</label><input type="text" value={props.width} onChange={(e) => setProp(props => props.width = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"/></div>
+                     <div><label className="text-xs text-gray-500 block mb-1">Height</label><input type="text" value={props.height} onChange={(e) => setProp(props => props.height = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"/></div>
+                 </div>
+             )
+        }
+        const Skeleton = ({ type, width, height }) => {
+            const { connectors: { connect, drag } } = useNode();
+            const classes = clsx("bg-slate-200 animate-pulse-fast", type === 'circular' ? 'rounded-full' : 'rounded-md');
+            return <div ref={ref => connect(drag(ref))} className={classes} style={{ width, height: type === 'text' ? '1em' : height }}></div>
+        }
+        Skeleton.craft = { displayName: 'Skeleton', props: { type: 'rectangular', width: '100%', height: '100px' }, related: { settings: SkeletonSettings } }
+
+        const AvatarSettings = () => {
+             const { actions: { setProp }, props } = useNode((node) => ({ props: node.data.props }));
+             return (
+                <div className="space-y-3 p-1">
+                    <div><label className="text-xs text-gray-500 block mb-1">Image URL</label><input type="text" value={props.src} onChange={(e) => setProp(props => props.src = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"/></div>
+                    <div><label className="text-xs text-gray-500 block mb-1">Size</label><select value={props.size} onChange={(e) => setProp(props => props.size = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"><option value="w-8 h-8">Small</option><option value="w-12 h-12">Medium</option><option value="w-20 h-20">Large</option></select></div>
+                    <div><label className="text-xs text-gray-500 block mb-1">Status</label><select value={props.status} onChange={(e) => setProp(props => props.status = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"><option value="none">None</option><option value="online">Online</option><option value="offline">Offline</option></select></div>
+                </div>
+             )
+        }
+        const Avatar = ({ src, size, status }) => {
+            const { connectors: { connect, drag } } = useNode();
+            return (
+                <div ref={ref => connect(drag(ref))} className="relative inline-block">
+                    {src ? (
+                        <img src={src} className={clsx("rounded-full object-cover border border-slate-200", size)} alt="Avatar" />
+                    ) : (
+                        <div className={clsx("rounded-full bg-slate-200 flex items-center justify-center text-slate-500", size)}><User size={20} /></div>
+                    )}
+                    {status !== 'none' && (
+                        <span className={clsx("absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white", status === 'online' ? "bg-green-500" : "bg-gray-400")}></span>
+                    )}
+                </div>
+            )
+        }
+        Avatar.craft = { displayName: 'Avatar', props: { src: 'https://i.pravatar.cc/150?img=32', size: 'w-12 h-12', status: 'online' }, related: { settings: AvatarSettings } }
+
+        const RatingSettings = () => {
+             const { actions: { setProp }, props } = useNode((node) => ({ props: node.data.props }));
+             return (
+                 <div className="space-y-3 p-1">
+                     <div><label className="text-xs text-gray-500 block mb-1">Stars</label><input type="range" min="1" max="5" value={props.stars} onChange={(e) => setProp(props => props.stars = parseInt(e.target.value))} className="w-full"/></div>
+                 </div>
+             )
+        }
+        const Rating = ({ stars }) => {
+            const { connectors: { connect, drag } } = useNode();
+            return (
+                <div ref={ref => connect(drag(ref))} className="flex gap-1">
+                    {[1, 2, 3, 4, 5].map((s) => (
+                        <Star key={s} size={18} className={clsx("fill-current", s <= stars ? "text-yellow-400" : "text-gray-300")} />
+                    ))}
+                </div>
+            )
+        }
+        Rating.craft = { displayName: 'Rating', props: { stars: 4 }, related: { settings: RatingSettings } }
+
+        const Timeline = () => {
+            const { connectors: { connect, drag }, id } = useNode();
+            return (
+                <div ref={ref => connect(drag(ref))} className="space-y-4 my-4">
+                    {[1, 2].map(i => (
+                        <div key={i} className="flex gap-4">
+                            <div className="flex flex-col items-center">
+                                <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center"><Clock size={14} /></div>
+                                <div className="w-0.5 flex-1 bg-gray-200 my-1"></div>
+                            </div>
+                            <div className="pb-6">
+                                <Element is={Container} id={`${id}_timeline_${i}`} canvas padding="p-3" background="bg-white" shadow={true}>
+                                    <Text text="Timeline Event Title" fontSize="16px" className="font-bold" />
+                                    <Text text="Description of the event goes here." fontSize="14px" className="text-gray-500" />
+                                </Element>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )
+        }
+        Timeline.craft = { displayName: 'Timeline' }
+
+        const VideoSettings = () => {
+            const { actions: { setProp }, props } = useNode((node) => ({ props: node.data.props }));
+            return (
+                <div className="space-y-3 p-1">
+                    <div><label className="text-xs text-gray-500 block mb-1">YouTube Video ID</label><input type="text" value={props.videoId} onChange={(e) => setProp(props => props.videoId = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"/></div>
+                </div>
+            );
+        };
+        const Video = ({ videoId }) => {
+            const { connectors: { connect, drag } } = useNode();
+            return (
+                <div ref={ref => connect(drag(ref))} className="w-full aspect-video bg-black rounded-lg overflow-hidden">
+                    <iframe width="100%" height="100%" src={`https://www.youtube.com/embed/${videoId}`} frameBorder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen></iframe>
+                </div>
+            );
+        };
+        Video.craft = { displayName: 'Video', props: { videoId: 'dQw4w9WgXcQ' }, related: { settings: VideoSettings } };
+
+        // ==========================================
+        // 5. REGISTRATION
+        // ==========================================
+
+        const userComponents = {
+            Container, Text, Button, Card,
+            FormContainer, FormInput, FormSubmit,
+            Heading, Image, Video, Link, Divider, TwoColumns, List, Alert, Badge, ProgressBar,
+            Header, Menubar, Hero, Tabs, Accordion, Skeleton, Avatar, Rating, Timeline,
+            ListView
+        };
+
+        const RenderNode = ({ render }) => {
+            const { id } = useNode();
+            const { actions, query, isActive } = useEditor((_, query) => ({ isActive: query.getEvent('selected').contains(id) }));
+            const { isHover, dom, name, moveable } = useNode((node) => ({ isHover: node.events.hovered, dom: node.dom, name: node.data.custom.displayName || node.data.displayName, moveable: query.node(node.id).isDraggable() }));
+
+            useEffect(() => {
+                if (dom) {
+                    if (isActive || isHover) dom.classList.add('component-selected');
+                    else dom.classList.remove('component-selected');
+                }
+            }, [dom, isActive, isHover]);
+
+            return (
+                <>
+                    {isActive && dom && (
+                        <div className="fixed z-50 bg-blue-600 text-white px-2 py-1 text-xs rounded-t-md flex items-center gap-2" style={{ left: dom.getBoundingClientRect().left, top: dom.getBoundingClientRect().top - 24 }}>
+                            <span className="font-bold">{name}</span>
+                            {id !== 'ROOT' && (<button className="hover:text-red-200" onMouseDown={(e) => { e.stopPropagation(); actions.delete(id); }}><Trash2 size={12} /></button>)}
+                            {moveable && <Move size={12} className="cursor-move" />}
+                        </div>
+                    )}
+                    {render}
+                </>
+            );
+        };
+
+        const Toolbox = () => {
+            const { connectors } = useEditor();
+            const ToolItem = ({ name, icon: Icon, component }) => (
+                <div ref={ref => connectors.create(ref, component)} className="flex flex-col items-center justify-center p-2 bg-white border rounded-lg hover:shadow-md hover:border-blue-400 cursor-move transition-all group h-20">
+                    <Icon className="text-gray-500 group-hover:text-blue-500 mb-1" size={20} />
+                    <span className="text-[10px] font-medium text-gray-600 text-center leading-tight">{name}</span>
+                </div>
+            );
+
+            return (
+                <div className="w-64 bg-white border-r border-gray-200 flex flex-col h-full">
+                    <div className="p-4 border-b border-gray-100"><h2 className="font-semibold text-slate-800 flex items-center gap-2"><LayoutTemplate size={18} className="text-blue-600"/> Components</h2></div>
+                    <div className="p-4 overflow-y-auto flex-1 space-y-6">
+                        <div>
+                            <h3 className="text-xs font-bold text-blue-600 uppercase mb-2 flex items-center gap-1"><Database size={12}/> Dynamic Data</h3>
+                            <div className="grid grid-cols-3 gap-2">
+                                <ToolItem name="List View" icon={Database} component={<ListView />} />
+                            </div>
+                        </div>
+                        <div>
+                            <h3 className="text-xs font-bold text-gray-400 uppercase mb-2">Advanced & Layout</h3>
+                            <div className="grid grid-cols-3 gap-2">
+                                <ToolItem name="Header" icon={Layout} component={<Header />} />
+                                <ToolItem name="Hero" icon={ImageIcon} component={<Hero />} />
+                                <ToolItem name="Tabs" icon={FolderOpen} component={<Element is={Tabs} canvas />} />
+                                <ToolItem name="Accordion" icon={Menu} component={<Accordion />} />
+                                <ToolItem name="Timeline" icon={Clock} component={<Timeline />} />
+                                <ToolItem name="Container" icon={Square} component={<Element is={Container} canvas />} />
+                                <ToolItem name="2 Cols" icon={Columns} component={<Element is={TwoColumns} canvas />} />
+                                <ToolItem name="Divider" icon={Minus} component={<Divider />} />
+                            </div>
+                        </div>
+                        <div>
+                            <h3 className="text-xs font-bold text-gray-400 uppercase mb-2">Content</h3>
+                            <div className="grid grid-cols-3 gap-2">
+                                <ToolItem name="Heading" icon={Heading1} component={<Heading />} />
+                                <ToolItem name="Text" icon={Type} component={<Text />} />
+                                <ToolItem name="List" icon={ListIcon} component={<List />} />
+                                <ToolItem name="Button" icon={MousePointer2} component={<Button />} />
+                                <ToolItem name="Link" icon={LinkIcon} component={<Link />} />
+                                <ToolItem name="Badge" icon={Tag} component={<Badge />} />
+                                <ToolItem name="Menubar" icon={GripHorizontal} component={<Menubar />} />
+                            </div>
+                        </div>
+                        <div>
+                            <h3 className="text-xs font-bold text-gray-400 uppercase mb-2">Media & Visuals</h3>
+                            <div className="grid grid-cols-3 gap-2">
+                                <ToolItem name="Image" icon={ImageIcon} component={<Image />} />
+                                <ToolItem name="Video" icon={VideoIcon} component={<Video />} />
+                                <ToolItem name="Card" icon={LayoutTemplate} component={<Card />} />
+                                <ToolItem name="Progress" icon={Percent} component={<ProgressBar />} />
+                                <ToolItem name="Alert" icon={AlertCircle} component={<Alert />} />
+                                <ToolItem name="Avatar" icon={User} component={<Avatar />} />
+                                <ToolItem name="Rating" icon={Star} component={<Rating />} />
+                                <ToolItem name="Skeleton" icon={Loader2} component={<Skeleton />} />
+                            </div>
+                        </div>
+                        <div>
+                            <h3 className="text-xs font-bold text-gray-400 uppercase mb-2">Forms</h3>
+                            <div className="grid grid-cols-3 gap-2">
+                                <ToolItem name="Wrapper" icon={CheckSquare} component={<Element is={FormContainer} canvas />} />
+                                <ToolItem name="Input" icon={FormInputIcon} component={<FormInput />} />
+                                <ToolItem name="Submit" icon={Send} component={<FormSubmit />} />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const SettingsPanel = () => {
+            const { selected, isEnabled } = useEditor((state, query) => {
+                const [currentNodeId] = state.events.selected;
+                let selected;
+                if (currentNodeId) {
+                    selected = {
+                        id: currentNodeId,
+                        name: state.nodes[currentNodeId].data.displayName,
+                        settings: state.nodes[currentNodeId].related && state.nodes[currentNodeId].related.settings,
+                    };
+                }
+                return { selected, isEnabled: state.options.enabled };
+            });
+
+            if (!isEnabled) return null;
+
+            return (
+                <div className="w-72 bg-white border-l border-gray-200 flex flex-col">
+                    <div className="p-4 border-b border-gray-100 flex justify-between items-center"><h2 className="font-semibold text-slate-800 flex items-center gap-2"><Settings size={18} className="text-blue-600"/> Properties</h2></div>
+                    <div className="p-4 flex-1 overflow-y-auto">
+                        {selected ? (
+                            <div>
+                                <div className="flex items-center justify-between mb-4 pb-2 border-b border-gray-100">
+                                    <span className="text-sm font-bold text-slate-700">{selected.name}</span>
+                                    <span className="text-xs text-gray-400 font-mono bg-gray-100 px-1 rounded">#{selected.id}</span>
+                                </div>
+                                {selected.settings ? React.createElement(selected.settings) : <div className="text-xs text-gray-400">No settings for this component</div>}
+                            </div>
+                        ) : (
+                            <div className="h-full flex flex-col items-center justify-center text-gray-400 space-y-2"><MousePointer2 size={32} className="opacity-20" /><p className="text-sm">Select an element to edit</p></div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const TopBar = () => {
+            const { actions, query, enabled, canUndo, canRedo } = useEditor((state, query) => ({
+                enabled: state.options.enabled,
+                canUndo: query.history.canUndo(),
+                canRedo: query.history.canRedo(),
+            }));
+
+            return (
+                <header className="h-14 bg-white border-b border-gray-200 flex items-center justify-between px-4 z-10 relative shadow-sm">
+                    <div className="flex items-center gap-3"><div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold shadow-blue-200">CB</div><h1 className="font-semibold text-slate-800">CraftBuilder</h1></div>
+                    <div className="flex items-center gap-2 bg-gray-100 p-1 rounded-md">
+                        <button onClick={() => actions.history.undo()} disabled={!canUndo} className={`p-1.5 rounded hover:bg-white transition-all ${!canUndo ? 'opacity-30 cursor-not-allowed' : 'text-gray-600'}`}><Undo size={16} /></button>
+                        <button onClick={() => actions.history.redo()} disabled={!canRedo} className={`p-1.5 rounded hover:bg-white transition-all ${!canRedo ? 'opacity-30 cursor-not-allowed' : 'text-gray-600'}`}><Redo size={16} /></button>
+                    </div>
+                    <div className="flex items-center gap-3">
+                        <div className="flex bg-gray-100 rounded-lg p-1">
+                            <button className={clsx("px-3 py-1.5 rounded-md text-sm font-medium flex items-center gap-2 transition-all", enabled ? "bg-white text-blue-600 shadow-sm" : "text-gray-500 hover:text-gray-700")} onClick={() => actions.setOptions(options => options.enabled = true)}><Code size={16} /> Edit</button>
+                            <button className={clsx("px-3 py-1.5 rounded-md text-sm font-medium flex items-center gap-2 transition-all", !enabled ? "bg-white text-blue-600 shadow-sm" : "text-gray-500 hover:text-gray-700")} onClick={() => actions.setOptions(options => options.enabled = false)}><Eye size={16} /> Preview</button>
+                        </div>
+                        <button className="bg-slate-900 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-800 transition-colors" onClick={() => { console.log(query.serialize()); alert('Layout JSON copied to console!'); }}>Publish</button>
+                    </div>
+                </header>
+            );
+        };
+
+        const App = () => {
+            return (
+                <div className="h-screen flex flex-col bg-white overflow-hidden">
+                    <Editor
+                        resolver={userComponents}
+                        onRender={RenderNode}
+                    >
+                        <TopBar />
+                        <div className="flex flex-1 overflow-hidden relative">
+                            <Toolbox />
+                            <div className="flex-1 bg-slate-50 overflow-y-auto p-8 flex justify-center relative">
+                                <div className="w-full max-w-[1024px] min-h-[800px] bg-white shadow-lg rounded-lg overflow-hidden mb-10 transition-all duration-300">
+                                    <Frame>
+                                        <Element is={Container} padding="p-10" background="bg-white" canvas>
+                                            <Element is={Container} background="bg-slate-100" padding="p-10" canvas>
+                                                <Heading text="Welcome to CraftBuilder" tag="h1" textAlign="center" />
+                                                <Text text="Drag components from the left to start building your page." fontSize="16px" textAlign="center" />
+                                                <div className="flex justify-center mt-4"><Button text="Get Started" variant="contained" color="blue" /></div>
+                                            </Element>
+                                            <Element is={TwoColumns} canvas />
+                                        </Element>
+                                    </Frame>
+                                </div>
+                            </div>
+                            <SettingsPanel />
+                        </div>
+                    </Editor>
+                </div>
+            );
+        };
+
+        const root = createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>

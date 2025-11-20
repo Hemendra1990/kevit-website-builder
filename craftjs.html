@@ -1,10 +1,11 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Craft.js Website Builder</title>
-    
+
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -42,30 +43,50 @@
     </script>
 
     <style>
-        body { font-family: 'Inter', sans-serif; overflow: hidden; }
-        
+        body {
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+        }
+
         /* Custom Scrollbar */
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
-        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 3px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
 
         /* Component Hover Effects in Editor */
         .component-selected {
             outline: 2px solid #2563eb !important;
             position: relative;
         }
+
         .component-hovered {
             outline: 1px dashed #2563eb;
         }
-        
+
         /* Form Styles */
-        input:focus, textarea:focus, select:focus {
+        input:focus,
+        textarea:focus,
+        select:focus {
             outline: 2px solid #2563eb;
             outline-offset: 1px;
         }
     </style>
 </head>
+
 <body class="bg-gray-100 h-screen flex flex-col text-slate-800">
 
     <div id="root" class="h-full flex flex-col"></div>
@@ -75,7 +96,7 @@
         import { createRoot } from 'react-dom/client';
         import { Editor, Frame, Element, useNode, useEditor } from '@craftjs/core';
         import { z } from 'zod';
-        import { 
+        import {
             Type, Square, LayoutTemplate, Image as ImageIcon, Settings, Trash2, Move, MousePointer2,
             Eye, Code, Undo, Redo, FormInput as FormInputIcon, CheckSquare, Send,
             Heading1, Video as VideoIcon, Minus, Link as LinkIcon, Columns, List as ListIcon, AlertCircle, Tag, Percent,
@@ -101,30 +122,21 @@
         const StaticNodeRenderer = ({ nodeId, data }) => {
             const { query } = useEditor();
             const node = query.node(nodeId).get();
-            
+
             if (!node) return null;
 
             const Component = node.data.type;
             const props = { ...node.data.props };
-            
-            if (props.dynamicKey && data) {
-                const dynamicValue = get(data, props.dynamicKey);
-                if (node.data.displayName === 'Text' || node.data.displayName === 'Heading') {
-                    if(dynamicValue) props.text = String(dynamicValue);
-                } else if (node.data.displayName === 'Image' || node.data.displayName === 'Avatar') {
-                    if(dynamicValue) props.src = String(dynamicValue);
-                } else if (node.data.displayName === 'Badge') {
-                    if(dynamicValue) props.text = String(dynamicValue);
-                } else if (node.data.displayName === 'Link') {
-                    if(dynamicValue) props.href = String(dynamicValue);
-                }
-            }
 
             const children = (node.data.nodes || []).map((childId) => (
                 <StaticNodeRenderer key={childId} nodeId={childId} data={data} />
             ));
 
-            return React.createElement(Component, { ...props, key: nodeId }, children.length > 0 ? children : undefined);
+            return (
+                <DataContext.Provider value={data}>
+                    {React.createElement(Component, { ...props, key: nodeId }, children.length > 0 ? children : undefined)}
+                </DataContext.Provider>
+            );
         };
 
         const ListViewSettings = () => {
@@ -133,14 +145,14 @@
                 <div className="space-y-3 p-1">
                     <div>
                         <label className="text-xs text-gray-500 block mb-1">API Endpoint</label>
-                        <input type="text" value={props.api} onChange={(e) => setProp(props => props.api = e.target.value)} className="w-full px-2 py-1 border rounded text-sm" placeholder="https://api.example.com/users"/>
+                        <input type="text" value={props.api} onChange={(e) => setProp(props => props.api = e.target.value)} className="w-full px-2 py-1 border rounded text-sm" placeholder="https://api.example.com/users" />
                     </div>
                     <div>
                         <label className="text-xs text-gray-500 block mb-1">Data Path (Supports dot notation)</label>
-                        <input type="text" value={props.dataPath} onChange={(e) => setProp(props => props.dataPath = e.target.value)} className="w-full px-2 py-1 border rounded text-sm" placeholder="e.g. data.results"/>
+                        <input type="text" value={props.dataPath} onChange={(e) => setProp(props => props.dataPath = e.target.value)} className="w-full px-2 py-1 border rounded text-sm" placeholder="e.g. data.results" />
                         <div className="text-[10px] text-gray-400">Path to the array in the JSON response.</div>
                     </div>
-                     <div>
+                    <div>
                         <label className="text-xs text-gray-500 block mb-1">Layout</label>
                         <select value={props.layout} onChange={(e) => setProp(props => props.layout = e.target.value)} className="w-full px-2 py-1 border rounded text-sm">
                             <option value="flex-col">Vertical List</option>
@@ -177,23 +189,24 @@
                 }
             }, [enabled, api, dataPath]);
 
-            const childNodes = query.node(id).get()?.data?.nodes;
-            const templateNodeId = childNodes && childNodes.length > 0 ? childNodes[0] : null;
+            const node = query.node(id).get();
+            const templateNodeId = node?.data?.linkedNodes?.listTemplate;
 
             return (
                 <div ref={ref => connect(drag(ref))} className="w-full min-h-[100px] p-2 border border-dashed border-transparent hover:border-blue-300 transition-colors">
                     {enabled ? (
                         <div className="border-2 border-dashed border-slate-300 rounded-lg p-4 bg-slate-50 relative">
                             <div className="absolute top-2 right-2 text-xs font-bold text-slate-400 uppercase tracking-wider pointer-events-none">Template</div>
-                            <Element is={Container} id={`${id}_template`} canvas padding="p-4" background="bg-white" shadow={true}>
+                            <Element is={Container} id="listTemplate" canvas padding="p-4" background="bg-white" shadow={true}>
                                 <Heading text="Item Title" tag="h3" />
                                 <Text text="Description goes here" />
                             </Element>
                         </div>
                     ) : (
                         <div className={layout}>
-                            {loading && <div className="p-8 text-center text-gray-500 flex items-center justify-center gap-2"><Loader2 className="animate-spin"/> Loading...</div>}
+                            {loading && <div className="p-8 text-center text-gray-500 flex items-center justify-center gap-2"><Loader2 className="animate-spin" /> Loading...</div>}
                             {error && <div className="p-4 text-red-500 bg-red-50 rounded">Error: {error}</div>}
+
                             {!loading && !error && templateNodeId && data.map((item, index) => (
                                 <StaticNodeRenderer key={index} nodeId={templateNodeId} data={item} />
                             ))}
@@ -218,11 +231,11 @@
             const { actions: { setProp }, props } = useNode((node) => ({ props: node.data.props }));
             return (
                 <div className="space-y-3 p-1">
-                    <div><label className="text-xs text-gray-500 block mb-1">Content</label><textarea value={props.text} onChange={(e) => setProp(props => props.text = e.target.value)} className="w-full px-2 py-1 border rounded text-sm h-20"/></div>
-                    <div><label className="text-xs text-gray-500 block mb-1">Size</label><input type="range" min="12" max="64" value={parseInt(props.fontSize)} onChange={(e) => setProp(props => props.fontSize = e.target.value + 'px')} className="w-full"/></div>
+                    <div><label className="text-xs text-gray-500 block mb-1">Content</label><textarea value={props.text} onChange={(e) => setProp(props => props.text = e.target.value)} className="w-full px-2 py-1 border rounded text-sm h-20" /></div>
+                    <div><label className="text-xs text-gray-500 block mb-1">Size</label><input type="range" min="12" max="64" value={parseInt(props.fontSize)} onChange={(e) => setProp(props => props.fontSize = e.target.value + 'px')} className="w-full" /></div>
                     <div className="pt-2 border-t">
-                        <label className="text-xs font-bold text-blue-600 block mb-1 flex items-center gap-1"><Database size={10}/> Dynamic Key</label>
-                        <input type="text" value={props.dynamicKey || ''} onChange={(e) => setProp(props => props.dynamicKey = e.target.value)} className="w-full px-2 py-1 border border-blue-200 rounded text-sm font-mono bg-blue-50" placeholder="e.g. user.address.city"/>
+                        <label className="text-xs font-bold text-blue-600 block mb-1 flex items-center gap-1"><Database size={10} /> Dynamic Key</label>
+                        <input type="text" value={props.dynamicKey || ''} onChange={(e) => setProp(props => props.dynamicKey = e.target.value)} className="w-full px-2 py-1 border border-blue-200 rounded text-sm font-mono bg-blue-50" placeholder="e.g. user.address.city" />
                         <div className="text-[10px] text-gray-400 mt-1">Use dot notation for nested objects</div>
                     </div>
                 </div>
@@ -230,7 +243,9 @@
         };
         const Text = ({ text, fontSize, textAlign, ...props }) => {
             const { connectors: { connect, drag }, isActive } = useNode((node) => ({ isActive: node.events.selected }));
-            return <div ref={ref => connect(drag(ref))} style={{ fontSize, textAlign }} className={clsx("p-2", isActive && "min-w-[50px]")}>{text}</div>;
+            const data = useContext(DataContext);
+            const resolvedText = (props.dynamicKey && data) ? String(get(data, props.dynamicKey, text)) : text;
+            return <div ref={ref => connect(drag(ref))} style={{ fontSize, textAlign }} className={clsx("p-2", isActive && "min-w-[50px]")}>{resolvedText}</div>;
         };
         Text.craft = { displayName: 'Text', props: { text: 'Edit this text', fontSize: '16px', textAlign: 'left' }, related: { settings: TextSettings } };
 
@@ -238,18 +253,20 @@
             const { actions: { setProp }, props } = useNode((node) => ({ props: node.data.props }));
             return (
                 <div className="space-y-3 p-1">
-                    <div><label className="text-xs text-gray-500 block mb-1">URL</label><input type="text" value={props.src} onChange={(e) => setProp(props => props.src = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"/></div>
-                    <div><label className="text-xs text-gray-500 block mb-1">Radius</label><input type="range" min="0" max="50" value={props.borderRadius} onChange={(e) => setProp(props => props.borderRadius = parseInt(e.target.value))} className="w-full"/></div>
+                    <div><label className="text-xs text-gray-500 block mb-1">URL</label><input type="text" value={props.src} onChange={(e) => setProp(props => props.src = e.target.value)} className="w-full px-2 py-1 border rounded text-sm" /></div>
+                    <div><label className="text-xs text-gray-500 block mb-1">Radius</label><input type="range" min="0" max="50" value={props.borderRadius} onChange={(e) => setProp(props => props.borderRadius = parseInt(e.target.value))} className="w-full" /></div>
                     <div className="pt-2 border-t">
-                        <label className="text-xs font-bold text-blue-600 block mb-1 flex items-center gap-1"><Database size={10}/> Dynamic Key</label>
-                        <input type="text" value={props.dynamicKey || ''} onChange={(e) => setProp(props => props.dynamicKey = e.target.value)} className="w-full px-2 py-1 border border-blue-200 rounded text-sm font-mono bg-blue-50" placeholder="e.g. item.images.thumbnail"/>
+                        <label className="text-xs font-bold text-blue-600 block mb-1 flex items-center gap-1"><Database size={10} /> Dynamic Key</label>
+                        <input type="text" value={props.dynamicKey || ''} onChange={(e) => setProp(props => props.dynamicKey = e.target.value)} className="w-full px-2 py-1 border border-blue-200 rounded text-sm font-mono bg-blue-50" placeholder="e.g. item.images.thumbnail" />
                     </div>
                 </div>
             );
         };
         const Image = ({ src, alt, borderRadius, ...props }) => {
             const { connectors: { connect, drag } } = useNode();
-            return <img ref={ref => connect(drag(ref))} src={src || 'https://via.placeholder.com/300'} alt={alt} className="w-full object-cover" style={{ borderRadius: `${borderRadius}px` }} {...props} />;
+            const data = useContext(DataContext);
+            const resolvedSrc = (props.dynamicKey && data) ? String(get(data, props.dynamicKey, src)) : src;
+            return <img ref={ref => connect(drag(ref))} src={resolvedSrc || 'https://via.placeholder.com/300'} alt={alt} className="w-full object-cover" style={{ borderRadius: `${borderRadius}px` }} {...props} />;
         };
         Image.craft = { displayName: 'Image', props: { src: 'https://images.unsplash.com/photo-1498050108023-c5249f4df085?auto=format&fit=crop&w=600&q=80', alt: 'Image', borderRadius: 4 }, related: { settings: ImageSettings } };
 
@@ -257,11 +274,11 @@
             const { actions: { setProp }, props } = useNode((node) => ({ props: node.data.props }));
             return (
                 <div className="space-y-3 p-1">
-                    <div><label className="text-xs text-gray-500 block mb-1">Text</label><input type="text" value={props.text} onChange={(e) => setProp(props => props.text = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"/></div>
+                    <div><label className="text-xs text-gray-500 block mb-1">Text</label><input type="text" value={props.text} onChange={(e) => setProp(props => props.text = e.target.value)} className="w-full px-2 py-1 border rounded text-sm" /></div>
                     <div><label className="text-xs text-gray-500 block mb-1">Tag</label><select value={props.tag} onChange={(e) => setProp(props => props.tag = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"><option value="h1">H1</option><option value="h2">H2</option><option value="h3">H3</option><option value="h4">H4</option></select></div>
                     <div className="pt-2 border-t">
-                        <label className="text-xs font-bold text-blue-600 block mb-1 flex items-center gap-1"><Database size={10}/> Dynamic Key</label>
-                        <input type="text" value={props.dynamicKey || ''} onChange={(e) => setProp(props => props.dynamicKey = e.target.value)} className="w-full px-2 py-1 border border-blue-200 rounded text-sm font-mono bg-blue-50" placeholder="e.g. post.title"/>
+                        <label className="text-xs font-bold text-blue-600 block mb-1 flex items-center gap-1"><Database size={10} /> Dynamic Key</label>
+                        <input type="text" value={props.dynamicKey || ''} onChange={(e) => setProp(props => props.dynamicKey = e.target.value)} className="w-full px-2 py-1 border border-blue-200 rounded text-sm font-mono bg-blue-50" placeholder="e.g. post.title" />
                     </div>
                 </div>
             );
@@ -270,7 +287,9 @@
             const { connectors: { connect, drag } } = useNode();
             const Tag = tag;
             const sizes = { h1: "text-4xl font-bold mb-4", h2: "text-3xl font-bold mb-3", h3: "text-2xl font-semibold mb-2", h4: "text-xl font-semibold mb-2" };
-            return <Tag ref={ref => connect(drag(ref))} className={clsx(sizes[tag], "text-slate-800")} style={{ textAlign }} {...props}>{text}</Tag>;
+            const data = useContext(DataContext);
+            const resolvedText = (props.dynamicKey && data) ? String(get(data, props.dynamicKey, text)) : text;
+            return <Tag ref={ref => connect(drag(ref))} className={clsx(sizes[tag], "text-slate-800")} style={{ textAlign }} {...props}>{resolvedText}</Tag>;
         };
         Heading.craft = { displayName: 'Heading', props: { text: 'Heading', tag: 'h2', textAlign: 'left' }, related: { settings: HeadingSettings } };
 
@@ -282,10 +301,10 @@
             const { actions: { setProp }, props } = useNode((node) => ({ props: node.data.props }));
             return (
                 <div className="space-y-3 p-1">
-                    <div><label className="text-xs text-gray-500 block mb-1">Label</label><input type="text" value={props.label} onChange={(e) => setProp(props => props.label = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"/></div>
-                    <div><label className="text-xs text-gray-500 block mb-1">Name</label><input type="text" value={props.name} onChange={(e) => setProp(props => props.name = e.target.value)} className="w-full px-2 py-1 border rounded text-sm font-mono"/></div>
+                    <div><label className="text-xs text-gray-500 block mb-1">Label</label><input type="text" value={props.label} onChange={(e) => setProp(props => props.label = e.target.value)} className="w-full px-2 py-1 border rounded text-sm" /></div>
+                    <div><label className="text-xs text-gray-500 block mb-1">Name</label><input type="text" value={props.name} onChange={(e) => setProp(props => props.name = e.target.value)} className="w-full px-2 py-1 border rounded text-sm font-mono" /></div>
                     <div><label className="text-xs text-gray-500 block mb-1">Type</label><select value={props.inputType} onChange={(e) => setProp(props => props.inputType = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"><option value="text">Text</option><option value="email">Email</option><option value="number">Number</option></select></div>
-                    <div><label className="flex items-center gap-2 text-xs text-gray-500"><input type="checkbox" checked={props.required} onChange={(e) => setProp(props => props.required = e.target.checked)}/> Required</label></div>
+                    <div><label className="flex items-center gap-2 text-xs text-gray-500"><input type="checkbox" checked={props.required} onChange={(e) => setProp(props => props.required = e.target.checked)} /> Required</label></div>
                 </div>
             );
         };
@@ -294,7 +313,7 @@
             return (
                 <div ref={ref => connect(drag(ref))} className="w-full mb-4">
                     <label className="block text-sm font-medium text-slate-700 mb-1">{label} {required && <span className="text-red-500">*</span>}</label>
-                    <input type={inputType} name={name} required={required} placeholder={`Enter ${label.toLowerCase()}`} className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm"/>
+                    <input type={inputType} name={name} required={required} placeholder={`Enter ${label.toLowerCase()}`} className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm" />
                 </div>
             );
         };
@@ -304,8 +323,8 @@
             const { actions: { setProp }, props } = useNode((node) => ({ props: node.data.props }));
             return (
                 <div className="space-y-3 p-1">
-                     <div><label className="text-xs text-gray-500 block mb-1">Text</label><input type="text" value={props.text} onChange={(e) => setProp(props => props.text = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"/></div>
-                     <div><label className="text-xs text-gray-500 block mb-1">Width</label><select value={props.fullWidth ? 'full' : 'auto'} onChange={(e) => setProp(props => props.fullWidth = e.target.value === 'full')} className="w-full px-2 py-1 border rounded text-sm"><option value="auto">Auto</option><option value="full">Full Width</option></select></div>
+                    <div><label className="text-xs text-gray-500 block mb-1">Text</label><input type="text" value={props.text} onChange={(e) => setProp(props => props.text = e.target.value)} className="w-full px-2 py-1 border rounded text-sm" /></div>
+                    <div><label className="text-xs text-gray-500 block mb-1">Width</label><select value={props.fullWidth ? 'full' : 'auto'} onChange={(e) => setProp(props => props.fullWidth = e.target.value === 'full')} className="w-full px-2 py-1 border rounded text-sm"><option value="auto">Auto</option><option value="full">Full Width</option></select></div>
                 </div>
             );
         };
@@ -319,7 +338,7 @@
             const { actions: { setProp }, props } = useNode((node) => ({ props: node.data.props }));
             return (
                 <div className="space-y-3 p-1">
-                    <div><label className="text-xs text-gray-500 block mb-1">Action</label><input type="text" value={props.action} onChange={(e) => setProp(props => props.action = e.target.value)} className="w-full px-2 py-1 border rounded text-sm font-mono"/></div>
+                    <div><label className="text-xs text-gray-500 block mb-1">Action</label><input type="text" value={props.action} onChange={(e) => setProp(props => props.action = e.target.value)} className="w-full px-2 py-1 border rounded text-sm font-mono" /></div>
                     <div><label className="text-xs text-gray-500 block mb-1">Method</label><select value={props.method} onChange={(e) => setProp(props => props.method = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"><option value="POST">POST</option><option value="GET">GET</option></select></div>
                 </div>
             );
@@ -355,12 +374,12 @@
         // ==========================================
 
         const ContainerSettings = () => {
-             const { actions: { setProp }, props } = useNode((node) => ({ props: node.data.props }));
+            const { actions: { setProp }, props } = useNode((node) => ({ props: node.data.props }));
             return (
                 <div className="space-y-3 p-1">
-                    <div><label className="text-xs text-gray-500 block mb-1">Background</label><div className="grid grid-cols-4 gap-2">{['white', 'slate-50', 'slate-100', 'blue-50', 'transparent'].map(c => (<button key={c} className={clsx("h-6 rounded border", c === 'transparent' ? "bg-white" : `bg-${c.replace('bg-', '')}`)} style={c === 'transparent' ? {backgroundImage: 'linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%)', backgroundSize: '10px 10px'} : {}} onClick={() => setProp(props => props.background = c === 'white' ? 'bg-white' : c === 'transparent' ? '' : `bg-${c}`)}/>))}</div></div>
+                    <div><label className="text-xs text-gray-500 block mb-1">Background</label><div className="grid grid-cols-4 gap-2">{['white', 'slate-50', 'slate-100', 'blue-50', 'transparent'].map(c => (<button key={c} className={clsx("h-6 rounded border", c === 'transparent' ? "bg-white" : `bg-${c.replace('bg-', '')}`)} style={c === 'transparent' ? { backgroundImage: 'linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%)', backgroundSize: '10px 10px' } : {}} onClick={() => setProp(props => props.background = c === 'white' ? 'bg-white' : c === 'transparent' ? '' : `bg-${c}`)} />))}</div></div>
                     <div><label className="text-xs text-gray-500 block mb-1">Padding</label><select value={props.padding} onChange={(e) => setProp(props => props.padding = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"><option value="p-2">Small</option><option value="p-6">Medium</option><option value="p-10">Large</option></select></div>
-                    <div><label className="flex items-center gap-2 text-xs text-gray-500"><input type="checkbox" checked={props.shadow} onChange={(e) => setProp(props => props.shadow = e.target.checked)}/> Shadow</label></div>
+                    <div><label className="flex items-center gap-2 text-xs text-gray-500"><input type="checkbox" checked={props.shadow} onChange={(e) => setProp(props => props.shadow = e.target.checked)} /> Shadow</label></div>
                 </div>
             )
         }
@@ -371,13 +390,13 @@
         Container.craft = { displayName: 'Container', props: { background: 'bg-white', padding: 'p-6', shadow: false }, related: { settings: ContainerSettings } };
 
         const Card = ({ background, padding, children }) => {
-             const { connectors: { connect, drag }, id } = useNode();
-             return (
-                 <div ref={ref => connect(drag(ref))} className="bg-white rounded-lg shadow-md overflow-hidden max-w-sm m-2 border border-gray-100">
+            const { connectors: { connect, drag }, id } = useNode();
+            return (
+                <div ref={ref => connect(drag(ref))} className="bg-white rounded-lg shadow-md overflow-hidden max-w-sm m-2 border border-gray-100">
                     <div className="h-32 bg-slate-200 w-full flex items-center justify-center text-slate-400"><ImageIcon size={40} /></div>
                     <div className="p-4"><Element is={Container} padding="p-0" canvas id={`${id}_content`}><Text text="Card Title" fontSize="20px" textAlign="left" /><Text text="Card description." fontSize="14px" textAlign="left" /><Button text="Action" variant="outlined" color="blue" /></Element></div>
-                 </div>
-             )
+                </div>
+            )
         }
         Card.craft = { displayName: 'Card', related: { settings: ContainerSettings } }
 
@@ -396,9 +415,9 @@
             const { actions: { setProp }, props } = useNode((node) => ({ props: node.data.props }));
             return (
                 <div className="space-y-3 p-1">
-                    <div><label className="text-xs text-gray-500 block mb-1">Text</label><input type="text" value={props.text} onChange={(e) => setProp(props => props.text = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"/></div>
+                    <div><label className="text-xs text-gray-500 block mb-1">Text</label><input type="text" value={props.text} onChange={(e) => setProp(props => props.text = e.target.value)} className="w-full px-2 py-1 border rounded text-sm" /></div>
                     <div><label className="text-xs text-gray-500 block mb-1">Variant</label><select value={props.variant} onChange={(e) => setProp(props => props.variant = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"><option value="contained">Filled</option><option value="outlined">Outlined</option><option value="text">Text</option></select></div>
-                    <div><label className="text-xs text-gray-500 block mb-1">Color</label><div className="flex gap-2">{['blue', 'green', 'red', 'slate'].map(c => (<button key={c} className={`w-6 h-6 rounded-full bg-${c}-500 ${props.color === c ? 'ring-2 ring-offset-1 ring-gray-400' : ''}`} onClick={() => setProp(props => props.color = c)}/>))}</div></div>
+                    <div><label className="text-xs text-gray-500 block mb-1">Color</label><div className="flex gap-2">{['blue', 'green', 'red', 'slate'].map(c => (<button key={c} className={`w-6 h-6 rounded-full bg-${c}-500 ${props.color === c ? 'ring-2 ring-offset-1 ring-gray-400' : ''}`} onClick={() => setProp(props => props.color = c)} />))}</div></div>
                 </div>
             );
         };
@@ -420,8 +439,8 @@
             const { actions: { setProp }, props } = useNode((node) => ({ props: node.data.props }));
             return (
                 <div className="space-y-3 p-1">
-                    <div><label className="text-xs text-gray-500 block mb-1">Items (newline separated)</label><textarea value={props.items} onChange={(e) => setProp(props => props.items = e.target.value)} className="w-full px-2 py-1 border rounded text-sm h-24"/></div>
-                    <div><label className="text-xs text-gray-500 block mb-1">Ordered</label><input type="checkbox" checked={props.ordered} onChange={(e) => setProp(props => props.ordered = e.target.checked)}/></div>
+                    <div><label className="text-xs text-gray-500 block mb-1">Items (newline separated)</label><textarea value={props.items} onChange={(e) => setProp(props => props.items = e.target.value)} className="w-full px-2 py-1 border rounded text-sm h-24" /></div>
+                    <div><label className="text-xs text-gray-500 block mb-1">Ordered</label><input type="checkbox" checked={props.ordered} onChange={(e) => setProp(props => props.ordered = e.target.checked)} /></div>
                 </div>
             );
         };
@@ -442,18 +461,20 @@
             const { actions: { setProp }, props } = useNode((node) => ({ props: node.data.props }));
             return (
                 <div className="space-y-3 p-1">
-                     <div><label className="text-xs text-gray-500 block mb-1">Text</label><input type="text" value={props.text} onChange={(e) => setProp(props => props.text = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"/></div>
-                     <div><label className="text-xs text-gray-500 block mb-1">URL</label><input type="text" value={props.href} onChange={(e) => setProp(props => props.href = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"/></div>
-                     <div className="pt-2 border-t">
-                        <label className="text-xs font-bold text-blue-600 block mb-1 flex items-center gap-1"><Database size={10}/> Dynamic URL Key</label>
-                        <input type="text" value={props.dynamicKey || ''} onChange={(e) => setProp(props => props.dynamicKey = e.target.value)} className="w-full px-2 py-1 border border-blue-200 rounded text-sm font-mono bg-blue-50" placeholder="e.g. company.website.url"/>
-                     </div>
+                    <div><label className="text-xs text-gray-500 block mb-1">Text</label><input type="text" value={props.text} onChange={(e) => setProp(props => props.text = e.target.value)} className="w-full px-2 py-1 border rounded text-sm" /></div>
+                    <div><label className="text-xs text-gray-500 block mb-1">URL</label><input type="text" value={props.href} onChange={(e) => setProp(props => props.href = e.target.value)} className="w-full px-2 py-1 border rounded text-sm" /></div>
+                    <div className="pt-2 border-t">
+                        <label className="text-xs font-bold text-blue-600 block mb-1 flex items-center gap-1"><Database size={10} /> Dynamic URL Key</label>
+                        <input type="text" value={props.dynamicKey || ''} onChange={(e) => setProp(props => props.dynamicKey = e.target.value)} className="w-full px-2 py-1 border border-blue-200 rounded text-sm font-mono bg-blue-50" placeholder="e.g. company.website.url" />
+                    </div>
                 </div>
             );
         };
-        const Link = ({ text, href }) => {
+        const Link = ({ text, href, ...props }) => {
             const { connectors: { connect, drag } } = useNode();
-            return <a ref={ref => connect(drag(ref))} href={href} target="_blank" className="text-blue-600 hover:underline inline-block p-1">{text}</a>;
+            const data = useContext(DataContext);
+            const resolvedHref = (props.dynamicKey && data) ? String(get(data, props.dynamicKey, href)) : href;
+            return <a ref={ref => connect(drag(ref))} href={resolvedHref} target="_blank" className="text-blue-600 hover:underline inline-block p-1">{text}</a>;
         };
         Link.craft = { displayName: 'Link', props: { text: 'Click Here', href: '#' }, related: { settings: LinkSettings } };
 
@@ -461,7 +482,7 @@
             const { actions: { setProp }, props } = useNode((node) => ({ props: node.data.props }));
             return (
                 <div className="space-y-3 p-1">
-                    <div><label className="text-xs text-gray-500 block mb-1">Message</label><textarea value={props.text} onChange={(e) => setProp(props => props.text = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"/></div>
+                    <div><label className="text-xs text-gray-500 block mb-1">Message</label><textarea value={props.text} onChange={(e) => setProp(props => props.text = e.target.value)} className="w-full px-2 py-1 border rounded text-sm" /></div>
                     <div><label className="text-xs text-gray-500 block mb-1">Variant</label><select value={props.variant} onChange={(e) => setProp(props => props.variant = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"><option value="info">Info</option><option value="success">Success</option><option value="warning">Warning</option><option value="danger">Danger</option></select></div>
                 </div>
             );
@@ -476,26 +497,28 @@
             };
             return (
                 <div ref={ref => connect(drag(ref))} className="p-4 rounded-md border my-2 text-sm">
-                   <div className={styles[variant]}> 
+                    <div className={styles[variant]}>
                         <strong>{variant.charAt(0).toUpperCase() + variant.slice(1)}: </strong> {text}
-                   </div>
+                    </div>
                 </div>
             );
         };
         Alert.craft = { displayName: 'Alert', props: { text: 'This is an alert message.', variant: 'info' }, related: { settings: AlertSettings } };
 
         const BadgeSettings = () => {
-             const { actions: { setProp }, props } = useNode((node) => ({ props: node.data.props }));
-             return (
-                 <div className="space-y-3 p-1">
-                     <div><label className="text-xs text-gray-500 block mb-1">Text</label><input type="text" value={props.text} onChange={(e) => setProp(props => props.text = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"/></div>
-                     <div><label className="text-xs text-gray-500 block mb-1">Color</label><div className="flex gap-2">{['blue', 'green', 'red', 'slate', 'purple'].map(c => (<button key={c} className={`w-6 h-6 rounded-full bg-${c}-500 ${props.color === c ? 'ring-2 ring-offset-1 ring-gray-400' : ''}`} onClick={() => setProp(props => props.color = c)} />))}</div></div>
-                 </div>
-             );
+            const { actions: { setProp }, props } = useNode((node) => ({ props: node.data.props }));
+            return (
+                <div className="space-y-3 p-1">
+                    <div><label className="text-xs text-gray-500 block mb-1">Text</label><input type="text" value={props.text} onChange={(e) => setProp(props => props.text = e.target.value)} className="w-full px-2 py-1 border rounded text-sm" /></div>
+                    <div><label className="text-xs text-gray-500 block mb-1">Color</label><div className="flex gap-2">{['blue', 'green', 'red', 'slate', 'purple'].map(c => (<button key={c} className={`w-6 h-6 rounded-full bg-${c}-500 ${props.color === c ? 'ring-2 ring-offset-1 ring-gray-400' : ''}`} onClick={() => setProp(props => props.color = c)} />))}</div></div>
+                </div>
+            );
         };
-        const Badge = ({ text, color }) => {
+        const Badge = ({ text, color, ...props }) => {
             const { connectors: { connect, drag } } = useNode();
-            return <span ref={ref => connect(drag(ref))} className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-${color}-100 text-${color}-800 mx-1`}>{text}</span>;
+            const data = useContext(DataContext);
+            const resolvedText = (props.dynamicKey && data) ? String(get(data, props.dynamicKey, text)) : text;
+            return <span ref={ref => connect(drag(ref))} className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-${color}-100 text-${color}-800 mx-1`}>{resolvedText}</span>;
         };
         Badge.craft = { displayName: 'Badge', props: { text: 'New', color: 'blue' }, related: { settings: BadgeSettings } };
 
@@ -503,7 +526,7 @@
             const { actions: { setProp }, props } = useNode((node) => ({ props: node.data.props }));
             return (
                 <div className="space-y-3 p-1">
-                    <div><label className="text-xs text-gray-500 block mb-1">Progress (%)</label><input type="range" min="0" max="100" value={props.value} onChange={(e) => setProp(props => props.value = parseInt(e.target.value))} className="w-full"/></div>
+                    <div><label className="text-xs text-gray-500 block mb-1">Progress (%)</label><input type="range" min="0" max="100" value={props.value} onChange={(e) => setProp(props => props.value = parseInt(e.target.value))} className="w-full" /></div>
                     <div><label className="text-xs text-gray-500 block mb-1">Color</label><select value={props.color} onChange={(e) => setProp(props => props.color = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"><option value="blue">Blue</option><option value="green">Green</option><option value="red">Red</option></select></div>
                 </div>
             );
@@ -519,19 +542,19 @@
         ProgressBar.craft = { displayName: 'Progress Bar', props: { value: 50, color: 'blue' }, related: { settings: ProgressBarSettings } };
 
         const HeaderSettings = () => {
-             const { actions: { setProp }, props } = useNode((node) => ({ props: node.data.props }));
-             return (
+            const { actions: { setProp }, props } = useNode((node) => ({ props: node.data.props }));
+            return (
                 <div className="space-y-3 p-1">
-                    <div><label className="text-xs text-gray-500 block mb-1">App Name</label><input type="text" value={props.appName} onChange={(e) => setProp(props => props.appName = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"/></div>
-                    <div><label className="text-xs text-gray-500 block mb-1">Fixed</label><input type="checkbox" checked={props.fixed} onChange={(e) => setProp(props => props.fixed = e.target.checked)}/></div>
+                    <div><label className="text-xs text-gray-500 block mb-1">App Name</label><input type="text" value={props.appName} onChange={(e) => setProp(props => props.appName = e.target.value)} className="w-full px-2 py-1 border rounded text-sm" /></div>
+                    <div><label className="text-xs text-gray-500 block mb-1">Fixed</label><input type="checkbox" checked={props.fixed} onChange={(e) => setProp(props => props.fixed = e.target.checked)} /></div>
                 </div>
-             )
+            )
         }
         const Header = ({ appName, fixed, children }) => {
             const { connectors: { connect, drag }, id } = useNode();
             return (
                 <nav ref={ref => connect(drag(ref))} className={clsx("w-full bg-white border-b px-6 py-3 flex items-center justify-between z-40", fixed ? "sticky top-0 shadow-md" : "relative")}>
-                    <div className="flex items-center gap-2 font-bold text-xl text-blue-600"><Layout size={24}/> <span>{appName}</span></div>
+                    <div className="flex items-center gap-2 font-bold text-xl text-blue-600"><Layout size={24} /> <span>{appName}</span></div>
                     <div className="flex-1 px-8"><Element is={Container} id={`${id}_nav`} padding="p-0" background="bg-transparent" canvas><Menubar /></Element></div>
                     <div><Element is={Container} id={`${id}_cta`} padding="p-0" background="bg-transparent" canvas><Button text="Login" variant="outlined" color="slate" /></Element></div>
                 </nav>
@@ -540,12 +563,12 @@
         Header.craft = { displayName: 'Header', props: { appName: 'MyBrand', fixed: false }, related: { settings: HeaderSettings } }
 
         const MenubarSettings = () => {
-             const { actions: { setProp }, props } = useNode((node) => ({ props: node.data.props }));
-             return (
+            const { actions: { setProp }, props } = useNode((node) => ({ props: node.data.props }));
+            return (
                 <div className="space-y-3 p-1">
-                    <div><label className="text-xs text-gray-500 block mb-1">Links (comma separated)</label><textarea value={props.items} onChange={(e) => setProp(props => props.items = e.target.value)} className="w-full px-2 py-1 border rounded text-sm h-20"/></div>
+                    <div><label className="text-xs text-gray-500 block mb-1">Links (comma separated)</label><textarea value={props.items} onChange={(e) => setProp(props => props.items = e.target.value)} className="w-full px-2 py-1 border rounded text-sm h-20" /></div>
                 </div>
-             )
+            )
         }
         const Menubar = ({ items }) => {
             const { connectors: { connect, drag } } = useNode();
@@ -559,13 +582,13 @@
         Menubar.craft = { displayName: 'Menubar', props: { items: 'Home, Features, Pricing, About' }, related: { settings: MenubarSettings } }
 
         const HeroSettings = () => {
-             const { actions: { setProp }, props } = useNode((node) => ({ props: node.data.props }));
-             return (
+            const { actions: { setProp }, props } = useNode((node) => ({ props: node.data.props }));
+            return (
                 <div className="space-y-3 p-1">
                     <div><label className="text-xs text-gray-500 block mb-1">Height</label><select value={props.height} onChange={(e) => setProp(props => props.height = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"><option value="h-auto">Auto</option><option value="h-[400px]">Medium</option><option value="h-[600px]">Large</option><option value="h-screen">Full Screen</option></select></div>
                     <div><label className="text-xs text-gray-500 block mb-1">Alignment</label><select value={props.align} onChange={(e) => setProp(props => props.align = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"><option value="items-start text-left">Left</option><option value="items-center text-center">Center</option><option value="items-end text-right">Right</option></select></div>
                 </div>
-             )
+            )
         }
         const Hero = ({ height, align, children }) => {
             const { connectors: { connect, drag }, id } = useNode();
@@ -585,9 +608,9 @@
             const { actions: { setProp }, props } = useNode((node) => ({ props: node.data.props }));
             return (
                 <div className="space-y-3 p-1">
-                    <div><label className="text-xs text-gray-500 block mb-1">Tab 1 Name</label><input type="text" value={props.tab1} onChange={(e) => setProp(props => props.tab1 = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"/></div>
-                    <div><label className="text-xs text-gray-500 block mb-1">Tab 2 Name</label><input type="text" value={props.tab2} onChange={(e) => setProp(props => props.tab2 = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"/></div>
-                    <div><label className="text-xs text-gray-500 block mb-1">Tab 3 Name</label><input type="text" value={props.tab3} onChange={(e) => setProp(props => props.tab3 = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"/></div>
+                    <div><label className="text-xs text-gray-500 block mb-1">Tab 1 Name</label><input type="text" value={props.tab1} onChange={(e) => setProp(props => props.tab1 = e.target.value)} className="w-full px-2 py-1 border rounded text-sm" /></div>
+                    <div><label className="text-xs text-gray-500 block mb-1">Tab 2 Name</label><input type="text" value={props.tab2} onChange={(e) => setProp(props => props.tab2 = e.target.value)} className="w-full px-2 py-1 border rounded text-sm" /></div>
+                    <div><label className="text-xs text-gray-500 block mb-1">Tab 3 Name</label><input type="text" value={props.tab3} onChange={(e) => setProp(props => props.tab3 = e.target.value)} className="w-full px-2 py-1 border rounded text-sm" /></div>
                 </div>
             )
         }
@@ -617,7 +640,7 @@
             return (
                 <div ref={ref => connect(drag(ref))} className="w-full border rounded-lg bg-white my-2 divide-y">
                     {[0, 1, 2].map((i) => (
-                         <div key={i}>
+                        <div key={i}>
                             <button onClick={() => setOpen(open === i ? -1 : i)} className="w-full flex items-center justify-between p-4 bg-slate-50 hover:bg-slate-100 transition-colors">
                                 <span className="font-medium text-slate-700">Accordion Item {i + 1}</span>
                                 <ChevronDown size={16} className={clsx("transition-transform", open === i ? "rotate-180" : "")} />
@@ -625,7 +648,7 @@
                             <div className={clsx("overflow-hidden transition-all", open === i ? "max-h-[500px] opacity-100" : "max-h-0 opacity-0")}>
                                 <Element is={Container} id={`${id}_acc_content_${i}`} canvas padding="p-4"><Text text="Details regarding this section go here." /></Element>
                             </div>
-                         </div>
+                        </div>
                     ))}
                 </div>
             )
@@ -633,14 +656,14 @@
         Accordion.craft = { displayName: 'Accordion' }
 
         const SkeletonSettings = () => {
-             const { actions: { setProp }, props } = useNode((node) => ({ props: node.data.props }));
-             return (
-                 <div className="space-y-3 p-1">
-                     <div><label className="text-xs text-gray-500 block mb-1">Type</label><select value={props.type} onChange={(e) => setProp(props => props.type = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"><option value="text">Text</option><option value="circular">Circular</option><option value="rectangular">Rectangular</option></select></div>
-                     <div><label className="text-xs text-gray-500 block mb-1">Width</label><input type="text" value={props.width} onChange={(e) => setProp(props => props.width = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"/></div>
-                     <div><label className="text-xs text-gray-500 block mb-1">Height</label><input type="text" value={props.height} onChange={(e) => setProp(props => props.height = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"/></div>
-                 </div>
-             )
+            const { actions: { setProp }, props } = useNode((node) => ({ props: node.data.props }));
+            return (
+                <div className="space-y-3 p-1">
+                    <div><label className="text-xs text-gray-500 block mb-1">Type</label><select value={props.type} onChange={(e) => setProp(props => props.type = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"><option value="text">Text</option><option value="circular">Circular</option><option value="rectangular">Rectangular</option></select></div>
+                    <div><label className="text-xs text-gray-500 block mb-1">Width</label><input type="text" value={props.width} onChange={(e) => setProp(props => props.width = e.target.value)} className="w-full px-2 py-1 border rounded text-sm" /></div>
+                    <div><label className="text-xs text-gray-500 block mb-1">Height</label><input type="text" value={props.height} onChange={(e) => setProp(props => props.height = e.target.value)} className="w-full px-2 py-1 border rounded text-sm" /></div>
+                </div>
+            )
         }
         const Skeleton = ({ type, width, height }) => {
             const { connectors: { connect, drag } } = useNode();
@@ -650,21 +673,23 @@
         Skeleton.craft = { displayName: 'Skeleton', props: { type: 'rectangular', width: '100%', height: '100px' }, related: { settings: SkeletonSettings } }
 
         const AvatarSettings = () => {
-             const { actions: { setProp }, props } = useNode((node) => ({ props: node.data.props }));
-             return (
+            const { actions: { setProp }, props } = useNode((node) => ({ props: node.data.props }));
+            return (
                 <div className="space-y-3 p-1">
-                    <div><label className="text-xs text-gray-500 block mb-1">Image URL</label><input type="text" value={props.src} onChange={(e) => setProp(props => props.src = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"/></div>
+                    <div><label className="text-xs text-gray-500 block mb-1">Image URL</label><input type="text" value={props.src} onChange={(e) => setProp(props => props.src = e.target.value)} className="w-full px-2 py-1 border rounded text-sm" /></div>
                     <div><label className="text-xs text-gray-500 block mb-1">Size</label><select value={props.size} onChange={(e) => setProp(props => props.size = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"><option value="w-8 h-8">Small</option><option value="w-12 h-12">Medium</option><option value="w-20 h-20">Large</option></select></div>
                     <div><label className="text-xs text-gray-500 block mb-1">Status</label><select value={props.status} onChange={(e) => setProp(props => props.status = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"><option value="none">None</option><option value="online">Online</option><option value="offline">Offline</option></select></div>
                 </div>
-             )
+            )
         }
-        const Avatar = ({ src, size, status }) => {
+        const Avatar = ({ src, size, status, ...props }) => {
             const { connectors: { connect, drag } } = useNode();
+            const data = useContext(DataContext);
+            const resolvedSrc = (props.dynamicKey && data) ? String(get(data, props.dynamicKey, src)) : src;
             return (
                 <div ref={ref => connect(drag(ref))} className="relative inline-block">
-                    {src ? (
-                        <img src={src} className={clsx("rounded-full object-cover border border-slate-200", size)} alt="Avatar" />
+                    {resolvedSrc ? (
+                        <img src={resolvedSrc} className={clsx("rounded-full object-cover border border-slate-200", size)} alt="Avatar" />
                     ) : (
                         <div className={clsx("rounded-full bg-slate-200 flex items-center justify-center text-slate-500", size)}><User size={20} /></div>
                     )}
@@ -677,12 +702,12 @@
         Avatar.craft = { displayName: 'Avatar', props: { src: 'https://i.pravatar.cc/150?img=32', size: 'w-12 h-12', status: 'online' }, related: { settings: AvatarSettings } }
 
         const RatingSettings = () => {
-             const { actions: { setProp }, props } = useNode((node) => ({ props: node.data.props }));
-             return (
-                 <div className="space-y-3 p-1">
-                     <div><label className="text-xs text-gray-500 block mb-1">Stars</label><input type="range" min="1" max="5" value={props.stars} onChange={(e) => setProp(props => props.stars = parseInt(e.target.value))} className="w-full"/></div>
-                 </div>
-             )
+            const { actions: { setProp }, props } = useNode((node) => ({ props: node.data.props }));
+            return (
+                <div className="space-y-3 p-1">
+                    <div><label className="text-xs text-gray-500 block mb-1">Stars</label><input type="range" min="1" max="5" value={props.stars} onChange={(e) => setProp(props => props.stars = parseInt(e.target.value))} className="w-full" /></div>
+                </div>
+            )
         }
         const Rating = ({ stars }) => {
             const { connectors: { connect, drag } } = useNode();
@@ -723,7 +748,7 @@
             const { actions: { setProp }, props } = useNode((node) => ({ props: node.data.props }));
             return (
                 <div className="space-y-3 p-1">
-                    <div><label className="text-xs text-gray-500 block mb-1">YouTube Video ID</label><input type="text" value={props.videoId} onChange={(e) => setProp(props => props.videoId = e.target.value)} className="w-full px-2 py-1 border rounded text-sm"/></div>
+                    <div><label className="text-xs text-gray-500 block mb-1">YouTube Video ID</label><input type="text" value={props.videoId} onChange={(e) => setProp(props => props.videoId = e.target.value)} className="w-full px-2 py-1 border rounded text-sm" /></div>
                 </div>
             );
         };
@@ -786,10 +811,10 @@
 
             return (
                 <div className="w-64 bg-white border-r border-gray-200 flex flex-col h-full">
-                    <div className="p-4 border-b border-gray-100"><h2 className="font-semibold text-slate-800 flex items-center gap-2"><LayoutTemplate size={18} className="text-blue-600"/> Components</h2></div>
+                    <div className="p-4 border-b border-gray-100"><h2 className="font-semibold text-slate-800 flex items-center gap-2"><LayoutTemplate size={18} className="text-blue-600" /> Components</h2></div>
                     <div className="p-4 overflow-y-auto flex-1 space-y-6">
                         <div>
-                            <h3 className="text-xs font-bold text-blue-600 uppercase mb-2 flex items-center gap-1"><Database size={12}/> Dynamic Data</h3>
+                            <h3 className="text-xs font-bold text-blue-600 uppercase mb-2 flex items-center gap-1"><Database size={12} /> Dynamic Data</h3>
                             <div className="grid grid-cols-3 gap-2">
                                 <ToolItem name="List View" icon={Database} component={<ListView />} />
                             </div>
@@ -863,7 +888,7 @@
 
             return (
                 <div className="w-72 bg-white border-l border-gray-200 flex flex-col">
-                    <div className="p-4 border-b border-gray-100 flex justify-between items-center"><h2 className="font-semibold text-slate-800 flex items-center gap-2"><Settings size={18} className="text-blue-600"/> Properties</h2></div>
+                    <div className="p-4 border-b border-gray-100 flex justify-between items-center"><h2 className="font-semibold text-slate-800 flex items-center gap-2"><Settings size={18} className="text-blue-600" /> Properties</h2></div>
                     <div className="p-4 flex-1 overflow-y-auto">
                         {selected ? (
                             <div>
@@ -941,4 +966,5 @@
         root.render(<App />);
     </script>
 </body>
+
 </html>
